@@ -1,0 +1,64 @@
+{
+  "name": "zod-paginate",
+  "version": "1.0.0",
+  "description": "A small utility to parse and validate pagination using Zod",
+  "keywords": [
+    "zod",
+    "paginate",
+    "pagination",
+    "cursor",
+    "page"
+  ],
+  "homepage": "https://github.com/nolway/zod-paginate#readme",
+  "bugs": {
+    "url": "https://github.com/nolway/zod-paginate/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nolway/zod-paginate.git"
+  },
+  "license": "GPL-3.0",
+  "author": "Nolway",
+  "main": "dist/main.js",
+  "scripts": {
+    "build": "rm -rf ./dist && npx tsc -p tsconfig.build.json",
+    "test": "vitest --run --coverage",
+    "lint": "eslint \"src/**/*.{ts,json}\"",
+    "lint:fix": "eslint \"src/**/*.{ts,json}\" --fix",
+    "prepare": "husky",
+    "precommit": "lint-staged",
+    "typecheck": "tsc --skipLibCheck --project tsconfig.json --noEmit --pretty false"
+  },
+  "types": "dist/main.d.ts",
+  "files": [
+    "dist/**/*"
+  ],
+  "peerDependencies": {
+    "zod": "^4.3.6"
+  },
+  "dependencies": {
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@commitlint/cli": "^20.4.1",
+    "@commitlint/config-conventional": "^20.4.1",
+    "@eslint/eslintrc": "^3.3.3",
+    "@eslint/js": "^9.0.0",
+    "@stylistic/eslint-plugin": "^5.8.0",
+    "@total-typescript/ts-reset": "^0.6.1",
+    "@vitest/coverage-v8": "^4.0.18",
+    "eslint": "^9.0.0",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-import-resolver-typescript": "^4.4.4",
+    "eslint-plugin-check-file": "^3.3.1",
+    "eslint-plugin-import": "^2.32.0",
+    "eslint-plugin-no-only-tests": "^3.3.0",
+    "eslint-plugin-prettier": "^5.5.5",
+    "husky": "^9.1.7",
+    "lint-staged": "^16.2.7",
+    "prettier": "^3.8.1",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.56.0",
+    "vitest": "^4.0.18"
+  }
+}

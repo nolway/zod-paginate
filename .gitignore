@@ -1,0 +1,30 @@
+# Logs
+logs
+*.log
+yarn-debug.log*
+yarn-error.log*
+
+# Package lock files
+pnpm-lock.json
+yarn.lock
+
+# Coverage directory used by jest
+coverage
+.nyc_output
+
+# Dependency directories
+node_modules/
+
+# IDE configuration directories
+.vscode
+.idea
+.history
+
+# Temp macOS files
+.DS_Store
+
+# Build
+dist/
+
+# Any private notes
+*.notes
