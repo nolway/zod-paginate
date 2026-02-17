@@ -107,14 +107,14 @@ const SelectCsvSchema = z
 /* Sort */
 /* ---------------------------------- */
 
-const SortDirectionSchema = z.enum(['ASC', 'DESC']);
-type SortDirection = z.infer<typeof SortDirectionSchema>;
+export const SortDirectionSchema = z.enum(['ASC', 'DESC']);
+export type SortDirection = z.infer<typeof SortDirectionSchema>;
 
-const SortItemSchema = z.object({
+export const SortItemSchema = z.object({
   property: z.string().min(1),
   direction: SortDirectionSchema,
 });
-type SortItem = z.infer<typeof SortItemSchema>;
+export type SortItem = z.infer<typeof SortItemSchema>;
 
 /**
  * Parse "field:ASC" into a SortItem.
@@ -142,7 +142,7 @@ function parseSortItem(raw: string): SortItem {
  * $sw: case-insensitive starts-with match (for strings)
  * $contains: checks if the field value contains the provided value (for strings)
  */
-const OperatorSchema = z.enum([
+export const OperatorSchema = z.enum([
   '$eq',
   '$null',
   '$in',
@@ -155,34 +155,35 @@ const OperatorSchema = z.enum([
   '$sw',
   '$contains',
 ]);
-type Operator = z.infer<typeof OperatorSchema>;
+export type Operator = z.infer<typeof OperatorSchema>;
 
 /**
  * Logical combinators for grouping conditions. $and and $or can be used to combine multiple conditions within the same group.
  */
-const CombinatorSchema = z.enum(['$and', '$or']);
-type Combinator = z.infer<typeof CombinatorSchema>;
+export const CombinatorSchema = z.enum(['$and', '$or']);
+export type Combinator = z.infer<typeof CombinatorSchema>;
 
 const ROOT_GROUP_ID = '0';
-const IntegerStringSchema = z.string().regex(/^\d+$/, 'Must be an integer string');
+export const IntegerStringSchema = z.string().regex(/^\d+$/, 'Must be an integer string');
 
 /**
  * Regex for validating ISO date strings (YYYY-MM-DD).
  */
-const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+export const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 /**
  * Regex for validating ISO datetime strings (YYYY-MM-DDTHH:mm:ss.sssZ or with timezone offset).
  */
-const ISO_DATETIME_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d{1,6})?)?(Z|[+-]\d{2}:\d{2})$/;
+export const ISO_DATETIME_RE =
+  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d{1,6})?)?(Z|[+-]\d{2}:\d{2})$/;
 
-const NumericStringSchema = z
+export const NumericStringSchema = z
   .string()
   .trim()
   .regex(/^\d+$/, 'Must be a numeric string')
   .transform((s) => Number(s));
 
-const NumOrDateSchema = z.union([z.number(), z.string()]);
+export const NumOrDateSchema = z.union([z.number(), z.string()]);
 
 type FieldType = 'string' | 'number' | 'date' | 'any';
 
@@ -206,7 +207,7 @@ type OpsForFieldType<TKind extends FieldType> = TKind extends 'string'
       ? CommonOps | ComparableOps
       : Operator;
 
-const ConditionSchema = z.discriminatedUnion('op', [
+export const ConditionSchema = z.discriminatedUnion('op', [
   z.object({
     group: IntegerStringSchema,
     combinator: CombinatorSchema.optional(),
@@ -255,26 +256,26 @@ const ConditionSchema = z.discriminatedUnion('op', [
   }),
 ]);
 
-type Condition = z.infer<typeof ConditionSchema>;
+export type Condition = z.infer<typeof ConditionSchema>;
 
 /* ---------------------------------- */
 /* Filters AST */
 /* ---------------------------------- */
 
-interface WhereFilter {
+export interface WhereFilter {
   type: 'filter';
   field: string;
   condition: Condition;
 }
-interface WhereAnd {
+export interface WhereAnd {
   type: 'and';
   items: WhereNode[];
 }
-interface WhereOr {
+export interface WhereOr {
   type: 'or';
   items: WhereNode[];
 }
-type WhereNode = WhereFilter | WhereAnd | WhereOr;
+export type WhereNode = WhereFilter | WhereAnd | WhereOr;
 
 function and(items: WhereNode[]): WhereNode {
   if (items.length === 1 && items[0]) return items[0];
