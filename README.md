@@ -473,8 +473,7 @@ const parsed = queryParamsSchema.parse({ cursor: "123", limit: "10" });
 //   limit: 10,
 //   cursor: 123,            // <- coerced from "123" because cursorProperty is a number
 //   cursorProperty: "id",
-//   select: ["id", "createdAt"],
-//   filters: { type: "and", items: [] }
+//   select: ["id", "createdAt"]
 // }
 ```
 
