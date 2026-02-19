@@ -194,10 +194,102 @@ You configure which fields are filterable and which operators are allowed via `f
 | `$null` | is null | no value |
 | `$in` | in list | `a,b,c` (comma-separated) |
 | `$contains` | contains values | `a,b,c` (comma-separated) |
-| `$gt` `$gte` `$lt` `$lte` | comparisons | number or ISO date |
+| `$gt` | greater than | number or ISO date |
+| `$gte` | greater than or equal | number or ISO date |
+| `$lt` | less than | number or ISO date |
+| `$lte` | less than or equal | number or ISO date |
 | `$btw` | between | `a,b` where both are numbers OR both are ISO dates |
 | `$ilike` | case-insensitive contains (string) | string |
 | `$sw` | starts with (string) | string |
+
+#### `$eq` — equals
+
+Matches rows where the field is exactly equal to the given value. The value type must match the field type (number, string, or ISO date).
+
+```txt
+filter.status=$eq:active
+filter.id=$eq:42
+filter.createdAt=$eq:2025-01-15
+```
+
+#### `$null` — is null
+
+Matches rows where the field is `NULL`. No value is required after the operator.
+
+```txt
+filter.deletedAt=$null
+```
+
+To match rows where the field is **not** null, combine with `$not`:
+
+```txt
+filter.deletedAt=$not:$null
+```
+
+#### `$in` — in list
+
+Matches rows where the field value is one of the provided comma-separated values.
+
+```txt
+filter.status=$in:active,pending,review
+filter.id=$in:1,2,3,10
+```
+
+#### `$contains` — contains values
+
+Matches rows where the field (typically an array column) contains all the provided comma-separated values.
+
+```txt
+filter.tags=$contains:typescript,zod
+filter.roles=$contains:admin
+```
+
+#### `$gt` / `$gte` / `$lt` / `$lte` — comparisons
+
+Standard comparison operators: greater than, greater than or equal, less than, less than or equal. Works with numbers and ISO dates.
+
+```txt
+filter.id=$gt:100
+filter.id=$lte:500
+filter.createdAt=$gte:2025-01-01
+filter.createdAt=$lt:2025-06-01T00:00:00Z
+```
+
+Combine multiple comparisons to build ranges:
+
+```txt
+filter.id=$gt:10&filter.id=$lt:100
+```
+
+#### `$btw` — between
+
+Matches rows where the field value falls between two bounds (inclusive). Both bounds must be the same type — either both numbers or both ISO dates.
+
+```txt
+filter.id=$btw:10,100
+filter.createdAt=$btw:2025-01-01,2025-12-31
+filter.createdAt=$btw:2025-01-01T00:00:00Z,2025-06-30T23:59:59Z
+```
+
+#### `$ilike` — case-insensitive contains
+
+Matches rows where the string field contains the given substring, ignoring case. Useful for search-style filtering.
+
+```txt
+filter.status=$ilike:act
+filter.name=$ilike:john
+filter.email=$ilike:@example.com
+```
+
+#### `$sw` — starts with
+
+Matches rows where the string field starts with the given prefix.
+
+```txt
+filter.name=$sw:Jon
+filter.email=$sw:admin@
+filter.path=$sw:/api/v2
+```
 
 Runtime validation enforces:
 
