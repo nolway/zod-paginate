@@ -6,7 +6,7 @@ It is designed for Node.js HTTP stacks where query parameters arrive as strings 
 
 - Supports **LIMIT/OFFSET pagination** (`limit` + `page`).
 - Supports **CURSOR pagination** with cursor coercion based on `cursorProperty` (number / string / ISO date string).
-- Supports **field projection** using `select` (CSV), including wildcard expansion (`*`) when enabled.
+- Supports **field projection** using `select`, including wildcard expansion (`*`) when enabled.
 - Supports **sorting** with an allowlist of sortable fields.
 - Supports a **filter DSL** with `$` operators and **nested AND/OR grouping**.
 - Provides a **response validator** (`validatorSchema`) to validate API responses against the projected schema.
@@ -164,11 +164,11 @@ Typical querystring parsers produce values like:
 
 ### `select`
 
-- Input: CSV string
+- Input: string
 - Output: string[] (typed paths)
 - Rules
   - Requires `selectable` in config
-  - CSV is split by `,`, trimmed, empty items removed
+  - string is split by `,`, trimmed, empty items removed
   - `*` expands to the configured `selectable` allowlist
   - If missing, falls back to `defaultSelect` if configured
   - `select=` (empty) is rejected

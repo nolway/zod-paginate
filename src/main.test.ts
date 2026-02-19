@@ -168,7 +168,7 @@ describe('paginate', () => {
     }
   });
 
-  it('parses select CSV and enforces selectable allowlist', () => {
+  it('parses select and enforces selectable allowlist', () => {
     const { queryParamsSchema } = makeLimitOffset();
 
     const parsed = queryParamsSchema.parse({
@@ -392,7 +392,7 @@ describe('paginate', () => {
     }
   });
 
-  it('select empty CSV (select=) is rejected', () => {
+  it('select empty string (select=) is rejected', () => {
     const { queryParamsSchema } = makeLimitOffset();
 
     expect(() =>

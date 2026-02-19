@@ -93,7 +93,7 @@ const StringOrStringArraySchema = z
  * Zod schema for the "select" parameter, which can be a comma-separated string or an array of strings.
  * It normalizes the output to an array of strings.
  */
-const SelectCsvSchema = z
+const SelectSchema = z
   .string()
   .transform((s) =>
     s
@@ -1230,7 +1230,7 @@ export function paginate<TSchema extends DataSchema>(
     cursor: z.string().min(1).optional(),
 
     sortBy: StringOrStringArraySchema.optional(),
-    select: SelectCsvSchema.optional(),
+    select: SelectSchema.optional(),
 
     rawFilters: z.record(z.string(), z.array(ConditionSchema)),
     groupDefs: z.record(
