@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.1.0](https://github.com/nolway/zod-paginate/compare/v1.0.1...v1.1.0) (2026-02-19)
+
+
+### Features
+
+* extract select as a standalone ([6e461eb](https://github.com/nolway/zod-paginate/commit/6e461eb5556a648662bfa12f551c9551cfae0103))
+
+
+### Miscellaneous Chores
+
+* release 1.1.0 ([1dec1b5](https://github.com/nolway/zod-paginate/commit/1dec1b549cd515970f7660a775f1f9cee7aa04b8))
+
 ## 1.0.1 (2026-02-17)
 
 
