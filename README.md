@@ -10,6 +10,7 @@ It is designed for Node.js HTTP stacks where query parameters arrive as strings 
 - Supports **sorting** with an allowlist of sortable fields.
 - Supports a **filter DSL** with `$` operators and **nested AND/OR grouping**.
 - Provides a **response validator** (`validatorSchema`) to validate API responses against the projected schema.
+- Also exports a lightweight **`select()`** utility for field-projection-only use cases.
 
 > This library does **not** bind DB queries automatically.
 > It gives you a safe parsed structure; you decide how to map it to your data layer.
@@ -515,4 +516,78 @@ responseSchema.parse({
   data: [{ id: 1, status: "active" }],
   pagination: { itemsPerPage: 10, totalItems: 1, currentPage: 1, totalPages: 1 },
 });
+```
+
+## `select()` — standalone field projection
+
+If you only need **field projection** without pagination, sorting, or filters, you can use the `select()` utility directly.
+
+### API
+
+```ts
+import { select } from "zod-paginate";
+
+export function select<TSchema extends DataSchema>(
+  config: SelectConfig<TSchema>,
+): {
+  queryParamsSchema: z.ZodType<SelectQueryParams<TSchema>>;
+  validatorSchema: (parsed?: SelectQueryParams<TSchema>) => z.ZodType;
+}
+```
+
+#### `SelectConfig`
+
+| Option | Type | Description |
+|---|---:|---|
+| `dataSchema` | `z.ZodObject` | Zod schema representing one data item. |
+| `selectable` | `string[]` (typed paths) | Allowlist of selectable fields (dot paths supported). |
+| `defaultSelect?` | `("*" \| field)[]` | Default select if `select` is missing. `["*"]` expands to `selectable`. |
+
+#### Output
+
+- `queryParamsSchema` parses `{ select: "id,name" }` into `{ select: ["id", "name"] }`.
+- `validatorSchema(parsed?)` returns a Zod schema expecting `{ data: Array<ProjectedItem> }`.
+
+#### Example
+
+```ts
+import { z } from "zod";
+import { select } from "zod-paginate";
+
+const ProductSchema = z.object({
+  id: z.number(),
+  name: z.string(),
+  price: z.number(),
+  details: z.object({
+    weight: z.number(),
+    color: z.string(),
+  }),
+});
+
+const { queryParamsSchema, validatorSchema } = select({
+  dataSchema: ProductSchema,
+  selectable: ["id", "name", "price", "details.weight", "details.color"],
+  defaultSelect: ["id", "name", "price"],
+});
+
+// select=* expands to all selectable fields
+const parsed = queryParamsSchema.parse({ select: "*" });
+// parsed.select → ["id", "name", "price", "details.weight", "details.color"]
+
+// With specific fields
+const parsed2 = queryParamsSchema.parse({ select: "id,name,details.color" });
+// parsed2.select → ["id", "name", "details.color"]
+
+// Validate response shape
+const responseSchema = validatorSchema(parsed2);
+responseSchema.parse({
+  data: [
+    { id: 1, name: "Widget", details: { color: "red" } },
+    { id: 2, name: "Gadget", details: { color: "blue" } },
+  ],
+});
+
+// Missing select → uses defaultSelect
+const parsed3 = queryParamsSchema.parse({});
+// parsed3.select → ["id", "name", "price"]
 ```

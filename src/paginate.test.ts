@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
-import { paginate, PaginationQueryParams } from './main';
+import { paginate, PaginationQueryParams } from './paginate';
 
 /**
  * Zod model used to validate Path<T> / projection / cursor type.
