@@ -591,3 +591,11 @@ responseSchema.parse({
 const parsed3 = queryParamsSchema.parse({});
 // parsed3.select → ["id", "name", "price"]
 ```
+
+## Adapters
+
+`zod-paginate` is ORM/query-builder agnostic by design — it parses and validates query parameters but does not generate database queries. **Adapters** bridge the gap between the parsed output and your data layer.
+
+| Adapter | Description | Link |
+|---|---|---|
+| **zod-paginate-drizzle** | Drizzle ORM adapter — automatically maps parsed pagination, filters, sorting, and select to Drizzle queries. | [GitHub](https://github.com/nolway/zod-paginate-drizzle) |
