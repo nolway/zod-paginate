@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.2.1](https://github.com/nolway/zod-paginate/compare/v1.2.0...v1.2.1) (2026-02-26)
+
+
+### Bug Fixes
+
+* keep pagination type thought schemas ([7d5edef](https://github.com/nolway/zod-paginate/commit/7d5edefb3f322a60fb44655d45fa931cbd6a3024))
+
+
+### Miscellaneous Chores
+
+* release 1.2.1 ([e327574](https://github.com/nolway/zod-paginate/commit/e3275742d139802c32493ca4899e04fc0b9faf3e))
+
 ## [1.2.0](https://github.com/nolway/zod-paginate/compare/v1.1.1...v1.2.0) (2026-02-26)
 
 
