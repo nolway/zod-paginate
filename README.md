@@ -9,7 +9,7 @@ It is designed for Node.js HTTP stacks where query parameters arrive as strings 
 - Supports **field projection** using `select`, including wildcard expansion (`*`) when enabled.
 - Supports **sorting** with an allowlist of sortable fields.
 - Supports a **filter DSL** with `$` operators and **nested AND/OR grouping**.
-- Provides a **response validator** (`validatorSchema`) to validate API responses against the projected schema.
+- Provides a **response validator** (`validatorSchema` / `responseSchema`) to validate API responses against the projected schema. `z.infer<typeof responseSchema>` gives you **key autocompletion** narrowed to configured `selectable` paths.
 - Also exports a lightweight **`select()`** utility for field-projection-only use cases.
 
 > This library does **not** bind DB queries automatically.
@@ -40,7 +40,7 @@ const ModelSchema = z.object({
   }),
 });
 
-const { queryParamsSchema, validatorSchema } = paginate({
+const { queryParamsSchema, validatorSchema, responseSchema } = paginate({
   paginationType: "LIMIT_OFFSET",
   dataSchema: ModelSchema,
 
@@ -70,9 +70,24 @@ const parsed = queryParamsSchema.parse({
 
 console.log(parsed.pagination);
 
-// Build the response validator from the request context
-const responseSchema = validatorSchema(parsed);
+// Pre-built response validator (uses defaultSelect)
+// z.infer<typeof responseSchema> narrows data keys to selectable paths
+responseSchema.parse({
+  data: [{ id: 1, status: "active", createdAt: new Date(), meta: { score: 42 } }],
+  pagination: { itemsPerPage: 20, totalItems: 1, currentPage: 1, totalPages: 1 },
+});
+
+// Or build a context-aware validator from the parsed request
+const contextSchema = validatorSchema(parsed.pagination);
 ```
+
+## Adapters
+
+`zod-paginate` is ORM/query-builder agnostic by design — it parses and validates query parameters but does not generate database queries. **Adapters** bridge the gap between the parsed output and your data layer.
+
+| Adapter | Description | Link |
+|---|---|---|
+| **zod-paginate-drizzle** | Drizzle ORM adapter — automatically maps parsed pagination, filters, sorting, and select to Drizzle queries. | [GitHub](https://github.com/nolway/zod-paginate-drizzle) |
 
 ## API
 
@@ -81,14 +96,28 @@ const responseSchema = validatorSchema(parsed);
 Returns:
 
 - `queryParamsSchema`: Zod schema to parse query objects (strings / string arrays).
-- `validatorSchema(parsed?)`: function returning a Zod schema to validate the response payload.
+- `validatorSchema(parsed?)`: function returning a Zod schema to validate the response payload, projected based on the parsed `select`.
+- `responseSchema`: pre-built Zod schema for validating responses using `defaultSelect` (or all selectable fields). Equivalent to calling `validatorSchema()` with no arguments.
 
 ```ts
-export function paginate<TSchema extends DataSchema>(
-  config: QueryConfigFromSchema<TSchema>,
-): {
-  queryParamsSchema: z.ZodType<PaginationQueryParams<TSchema>>;
-  validatorSchema: (parsed?: PaginationQueryParams<TSchema>) => z.ZodType;
+export function paginate<
+  TSchema extends DataSchema,
+  const TSelectable extends readonly AllowedPath<TSchema>[],
+>(
+  config: QueryConfigFromSchema<TSchema, TSelectable[number]>,
+): PaginateResult<TSchema, TSelectable[number]>;
+```
+
+#### `PaginateResult<TSchema, TSelectable?>`
+
+Use `PaginateResult<TSchema, TSelectable>` instead of `ReturnType<typeof paginate>` when you need an explicit return type — it preserves the generics so that `z.infer<typeof responseSchema>` correctly narrows the `data` keys to the configured `selectable` paths.
+
+```ts
+import { paginate, type PaginateResult } from "zod-paginate";
+
+// TSelectable defaults to all paths if omitted
+function createPaginator(): PaginateResult<typeof ModelSchema, "id" | "status"> {
+  return paginate({ dataSchema: ModelSchema, selectable: ["id", "status"], /* … */ });
 }
 ```
 
@@ -504,15 +533,37 @@ const parsed = queryParamsSchema.parse({
 
 ### Example 4 — validating your response
 
+Using the pre-built `responseSchema` (based on `defaultSelect`):
+
+```ts
+const { responseSchema } = paginate({
+  paginationType: "LIMIT_OFFSET",
+  dataSchema: ModelSchema,
+  selectable: ["id", "status", "createdAt", "meta.score"],
+  defaultSelect: ["*"],
+  defaultLimit: 20,
+  maxLimit: 100,
+});
+
+// Validate without parsing a request first
+responseSchema.parse({
+  data: [{ id: 1, status: "active", createdAt: new Date(), meta: { score: 42 } }],
+  pagination: { itemsPerPage: 20, totalItems: 1, currentPage: 1, totalPages: 1 },
+});
+
+// Type-safe: z.infer narrows data keys to selectable paths
+type Response = z.infer<typeof responseSchema>;
+// Response["data"][0] → { id?: unknown; status?: unknown; createdAt?: unknown; meta?: unknown }
+```
+
+Or using `validatorSchema(parsed)` for request-aware projection:
+
 ```ts
 const parsed = queryParamsSchema.parse({ select: "id,status", limit: "10", page: "1" });
-const responseSchema = validatorSchema(parsed);
+const contextSchema = validatorSchema(parsed.pagination);
 
-// responseSchema expects:
-// - data items shaped like { id: number, status: string }
-// - pagination metadata for LIMIT/OFFSET
-
-responseSchema.parse({
+// contextSchema expects data items shaped like { id, status } only
+contextSchema.parse({
   data: [{ id: 1, status: "active" }],
   pagination: { itemsPerPage: 10, totalItems: 1, currentPage: 1, totalPages: 1 },
 });
@@ -527,11 +578,27 @@ If you only need **field projection** without pagination, sorting, or filters, y
 ```ts
 import { select } from "zod-paginate";
 
-export function select<TSchema extends DataSchema>(
-  config: SelectConfig<TSchema>,
-): {
-  queryParamsSchema: z.ZodType<SelectQueryParams<TSchema>>;
-  validatorSchema: (parsed?: SelectQueryParams<TSchema>) => z.ZodType;
+export function select<
+  TSchema extends DataSchema,
+  const TSelectable extends readonly AllowedPath<TSchema>[],
+>(
+  config: SelectConfig<TSchema, TSelectable[number]>,
+): SelectResult<TSchema, TSelectable[number]>;
+```
+
+Returns:
+
+- `queryParamsSchema`: Zod schema to parse `{ select: "id,name" }` into `{ select: ["id", "name"] }`.
+- `validatorSchema(parsed?)`: function returning a Zod schema expecting `{ data: Array<ProjectedItem> }`.
+- `responseSchema`: pre-built Zod schema for validating responses using `defaultSelect` (or all selectable fields). `z.infer<typeof responseSchema>` narrows data keys to the configured `selectable` paths.
+
+Use `SelectResult<TSchema, TSelectable>` instead of `ReturnType<typeof select>` for explicit return types:
+
+```ts
+import { select, type SelectResult } from "zod-paginate";
+
+function createSelector(): SelectResult<typeof ProductSchema, "id" | "name" | "price"> {
+  return select({ dataSchema: ProductSchema, selectable: ["id", "name", "price"], /* … */ });
 }
 ```
 
@@ -542,11 +609,6 @@ export function select<TSchema extends DataSchema>(
 | `dataSchema` | `z.ZodObject` | Zod schema representing one data item. |
 | `selectable` | `string[]` (typed paths) | Allowlist of selectable fields (dot paths supported). |
 | `defaultSelect?` | `("*" \| field)[]` | Default select if `select` is missing. `["*"]` expands to `selectable`. |
-
-#### Output
-
-- `queryParamsSchema` parses `{ select: "id,name" }` into `{ select: ["id", "name"] }`.
-- `validatorSchema(parsed?)` returns a Zod schema expecting `{ data: Array<ProjectedItem> }`.
 
 #### Example
 
@@ -564,7 +626,7 @@ const ProductSchema = z.object({
   }),
 });
 
-const { queryParamsSchema, validatorSchema } = select({
+const { queryParamsSchema, validatorSchema, responseSchema } = select({
   dataSchema: ProductSchema,
   selectable: ["id", "name", "price", "details.weight", "details.color"],
   defaultSelect: ["id", "name", "price"],
@@ -578,9 +640,14 @@ const parsed = queryParamsSchema.parse({ select: "*" });
 const parsed2 = queryParamsSchema.parse({ select: "id,name,details.color" });
 // parsed2.select → ["id", "name", "details.color"]
 
-// Validate response shape
-const responseSchema = validatorSchema(parsed2);
+// Pre-built response validator (based on defaultSelect)
 responseSchema.parse({
+  data: [{ id: 1, name: "Widget", price: 9.99 }],
+});
+
+// Or context-aware validator from parsed request
+const contextSchema = validatorSchema(parsed2);
+contextSchema.parse({
   data: [
     { id: 1, name: "Widget", details: { color: "red" } },
     { id: 2, name: "Gadget", details: { color: "blue" } },
@@ -592,10 +659,3 @@ const parsed3 = queryParamsSchema.parse({});
 // parsed3.select → ["id", "name", "price"]
 ```
 
-## Adapters
-
-`zod-paginate` is ORM/query-builder agnostic by design — it parses and validates query parameters but does not generate database queries. **Adapters** bridge the gap between the parsed output and your data layer.
-
-| Adapter | Description | Link |
-|---|---|---|
-| **zod-paginate-drizzle** | Drizzle ORM adapter — automatically maps parsed pagination, filters, sorting, and select to Drizzle queries. | [GitHub](https://github.com/nolway/zod-paginate-drizzle) |

@@ -77,9 +77,12 @@ export const SelectSchema = z
 /* Select config (shared) */
 /* ---------------------------------- */
 
-export interface SelectableConfig<TSchema extends DataSchema> {
-  selectable?: readonly AllowedPath<TSchema>[];
-  defaultSelect?: readonly (AllowedPath<TSchema> | '*')[];
+export interface SelectableConfig<
+  TSchema extends DataSchema,
+  TSelect extends AllowedPath<TSchema> = AllowedPath<TSchema>,
+> {
+  selectable?: readonly TSelect[];
+  defaultSelect?: readonly (TSelect | '*')[];
 }
 
 /* ---------------------------------- */
@@ -90,28 +93,31 @@ export interface SelectableConfig<TSchema extends DataSchema> {
  * Find a typed AllowedPath value from a string, by matching against a typed allowlist.
  * This avoids `as`: we return the existing typed value.
  */
-export function pickFromAllowlist<TSchema extends DataSchema>(
-  allowlist: readonly AllowedPath<TSchema>[] | undefined,
+export function pickFromAllowlist<T extends string>(
+  allowlist: readonly T[] | undefined,
   value: string,
-): AllowedPath<TSchema> | undefined {
+): T | undefined {
   if (!allowlist) return undefined;
   for (const item of allowlist) {
-    if (`${item}` === value) return item;
+    if (item === value) return item;
   }
   return undefined;
 }
 
 /** Expand "*" to selectable; otherwise map through allowlist. */
-export function expandSelect<TSchema extends DataSchema>(
+export function expandSelect<
+  TSchema extends DataSchema,
+  TSelect extends AllowedPath<TSchema> = AllowedPath<TSchema>,
+>(
   select: readonly string[] | undefined,
-  config: SelectableConfig<TSchema>,
-): readonly AllowedPath<TSchema>[] | undefined {
+  config: SelectableConfig<TSchema, TSelect>,
+): readonly TSelect[] | undefined {
   if (!select) return undefined;
 
   if (!select.includes('*')) {
     if (!config.selectable || config.selectable.length === 0) return undefined;
 
-    const out: AllowedPath<TSchema>[] = [];
+    const out: TSelect[] = [];
     for (const field of select) {
       const picked = pickFromAllowlist(config.selectable, field);
       if (picked) out.push(picked);
@@ -123,10 +129,10 @@ export function expandSelect<TSchema extends DataSchema>(
   return undefined;
 }
 
-export function computeSelect<TSchema extends DataSchema>(
-  select: string[] | undefined,
-  config: SelectableConfig<TSchema>,
-): AllowedPath<TSchema>[] | undefined {
+export function computeSelect<
+  TSchema extends DataSchema,
+  TSelect extends AllowedPath<TSchema> = AllowedPath<TSchema>,
+>(select: string[] | undefined, config: SelectableConfig<TSchema, TSelect>): TSelect[] | undefined {
   if (select) {
     const expanded = expandSelect(select, config);
     if (!expanded) return undefined;
@@ -277,18 +283,67 @@ export function projectDataSchema(
 /* Config */
 /* ---------------------------------- */
 
-export interface SelectConfig<TSchema extends DataSchema> {
+export interface SelectConfig<
+  TSchema extends DataSchema,
+  TSelect extends AllowedPath<TSchema> = AllowedPath<TSchema>,
+> {
   dataSchema: TSchema;
-  selectable: readonly AllowedPath<TSchema>[];
-  defaultSelect?: readonly (AllowedPath<TSchema> | '*')[];
+  selectable: readonly TSelect[];
+  defaultSelect?: readonly (TSelect | '*')[];
 }
 
 /* ---------------------------------- */
 /* Output */
 /* ---------------------------------- */
 
-export interface SelectQueryParams<TSchema extends DataSchema> {
-  select: AllowedPath<TSchema>[];
+/**
+ * Extract the top-level key from a dot-path.
+ * e.g. `'meta.score'` → `'meta'`, `'id'` → `'id'`.
+ */
+export type TopLevelKey<P extends string> = P extends `${infer K}.${string}` ? K : P;
+
+/**
+ * Projected data item: exposes only the selectable keys of the original schema
+ * with `unknown` values. This gives consumers key auto-completion
+ * without requiring `as` (projectDataSchema erases value types at runtime).
+ */
+export type ProjectedData<
+  TSchema extends DataSchema,
+  TSelect extends AllowedPath<TSchema> = AllowedPath<TSchema>,
+> = Partial<Record<TopLevelKey<TSelect> & keyof InferData<TSchema>, unknown>>;
+
+export interface SelectQueryParams<
+  TSchema extends DataSchema,
+  TSelect extends AllowedPath<TSchema> = AllowedPath<TSchema>,
+> {
+  select: TSelect[];
+}
+
+export interface SelectResponse<
+  TSchema extends DataSchema,
+  TSelect extends AllowedPath<TSchema> = AllowedPath<TSchema>,
+> {
+  data: ProjectedData<TSchema, TSelect>[];
+}
+
+/**
+ * Result type returned by `select()`. Use this instead of
+ * `ReturnType<typeof select>` to preserve the generic `TSchema`.
+ *
+ * @example
+ * function createSelector(): SelectResult<typeof MySchema> {
+ *   return select({ dataSchema: MySchema, … });
+ * }
+ */
+export interface SelectResult<
+  TSchema extends DataSchema,
+  TSelectable extends AllowedPath<TSchema> = AllowedPath<TSchema>,
+> {
+  queryParamsSchema: z.ZodType<SelectQueryParams<TSchema, TSelectable>>;
+  validatorSchema: (
+    parsed?: SelectQueryParams<TSchema, TSelectable>,
+  ) => z.ZodType<SelectResponse<TSchema, TSelectable>>;
+  responseSchema: z.ZodType<SelectResponse<TSchema, TSelectable>>;
 }
 
 /* ---------------------------------- */
@@ -301,13 +356,12 @@ export interface SelectQueryParams<TSchema extends DataSchema> {
  * @returns An object containing:
  *   - `queryParamsSchema`: A Zod schema for validating and parsing the raw query parameters.
  *   - `validatorSchema`: A function that takes the already-parsed query parameters and returns a Zod schema for validating the response.
+ *   - `responseSchema`: A pre-built Zod schema for validating the response (uses defaultSelect or all selectable fields).
  */
-export function select<TSchema extends DataSchema>(
-  config: SelectConfig<TSchema>,
-): {
-  queryParamsSchema: z.ZodType<SelectQueryParams<TSchema>>;
-  validatorSchema: (parsed?: SelectQueryParams<TSchema>) => z.ZodType;
-} {
+export function select<
+  TSchema extends DataSchema,
+  const TSelectable extends readonly AllowedPath<TSchema>[],
+>(config: SelectConfig<TSchema, TSelectable[number]>): SelectResult<TSchema, TSelectable[number]> {
   const allowedSelectable = new Set<string>();
   for (const f of config.selectable) allowedSelectable.add(`${f}`);
 
@@ -315,7 +369,7 @@ export function select<TSchema extends DataSchema>(
     select: SelectSchema.optional(),
   });
 
-  const queryParamsSchema: z.ZodType<SelectQueryParams<TSchema>> = z
+  const queryParamsSchema: z.ZodType<SelectQueryParams<TSchema, TSelectable[number]>> = z
     .record(z.string(), z.unknown())
     .transform((q): Record<string, unknown> => {
       const raw = q.select;
@@ -369,7 +423,7 @@ export function select<TSchema extends DataSchema>(
             }
           }
         })
-        .transform((val): SelectQueryParams<TSchema> => {
+        .transform((val): SelectQueryParams<TSchema, TSelectable[number]> => {
           const resolved = computeSelect(val.select, config);
 
           if (!resolved || resolved.length === 0) {
@@ -380,7 +434,9 @@ export function select<TSchema extends DataSchema>(
         }),
     );
 
-  const validatorSchema = (parsed?: SelectQueryParams<TSchema>): z.ZodType => {
+  const validatorSchema = (
+    parsed?: SelectQueryParams<TSchema, TSelectable[number]>,
+  ): z.ZodType<SelectResponse<TSchema, TSelectable[number]>> => {
     const effectiveSelect = parsed?.select ?? computeSelect(undefined, config) ?? undefined;
 
     const dataItemSchema =
@@ -396,5 +452,7 @@ export function select<TSchema extends DataSchema>(
     });
   };
 
-  return { queryParamsSchema, validatorSchema };
+  const responseSchema = validatorSchema();
+
+  return { queryParamsSchema, validatorSchema, responseSchema };
 }

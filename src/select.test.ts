@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
-import { select, SelectQueryParams } from './select';
+import { select } from './select';
 
 const ModelSchema = z.object({
   id: z.number(),
@@ -11,35 +11,29 @@ const ModelSchema = z.object({
   }),
 });
 
-function makeSelect(): {
-  queryParamsSchema: z.ZodType<SelectQueryParams<typeof ModelSchema>>;
-  validatorSchema: (parsed?: SelectQueryParams<typeof ModelSchema>) => z.ZodType;
-} {
+// eslint-disable-next-line @typescript-eslint/explicit-function-return-type
+function makeSelect() {
   return select({
     dataSchema: ModelSchema,
-    selectable: ['id', 'status', 'createdAt', 'meta.score'],
+    selectable: ['id', 'status', 'meta.score'],
     defaultSelect: ['*'],
   });
 }
 
-function makeSelectNoDefault(): {
-  queryParamsSchema: z.ZodType<SelectQueryParams<typeof ModelSchema>>;
-  validatorSchema: (parsed?: SelectQueryParams<typeof ModelSchema>) => z.ZodType;
-} {
+// eslint-disable-next-line @typescript-eslint/explicit-function-return-type
+function makeSelectNoDefault() {
   return select({
     dataSchema: ModelSchema,
-    selectable: ['id', 'status', 'createdAt', 'meta.score'],
+    selectable: ['id', 'status', 'meta.score'],
   });
 }
 
-function makeSelectWithPartialDefault(): {
-  queryParamsSchema: z.ZodType<SelectQueryParams<typeof ModelSchema>>;
-  validatorSchema: (parsed?: SelectQueryParams<typeof ModelSchema>) => z.ZodType;
-} {
+// eslint-disable-next-line @typescript-eslint/explicit-function-return-type
+function makeSelectWithPartialDefault() {
   return select({
     dataSchema: ModelSchema,
-    selectable: ['id', 'status', 'createdAt', 'meta.score'],
-    defaultSelect: ['id', 'createdAt'],
+    selectable: ['id', 'status', 'meta.score'],
+    defaultSelect: ['id', 'status'],
   });
 }
 
@@ -77,7 +71,7 @@ describe('select', () => {
 
     const parsed = queryParamsSchema.parse({ select: '*' });
 
-    expect(parsed.select).toEqual(['id', 'status', 'createdAt', 'meta.score']);
+    expect(parsed.select).toEqual(['id', 'status', 'meta.score']);
   });
 
   it('falls back to defaultSelect when select is missing', () => {
@@ -86,7 +80,7 @@ describe('select', () => {
     const parsed = queryParamsSchema.parse({});
 
     // defaultSelect: ["*"] expands to full selectable
-    expect(parsed.select).toEqual(['id', 'status', 'createdAt', 'meta.score']);
+    expect(parsed.select).toEqual(['id', 'status', 'meta.score']);
   });
 
   it('falls back to partial defaultSelect when select is missing', () => {
@@ -94,7 +88,7 @@ describe('select', () => {
 
     const parsed = queryParamsSchema.parse({});
 
-    expect(parsed.select).toEqual(['id', 'createdAt']);
+    expect(parsed.select).toEqual(['id', 'status']);
   });
 
   /* ---------------------------------- */
@@ -125,7 +119,7 @@ describe('select', () => {
     // select is not a string => falls back to defaultSelect
     const parsed = queryParamsSchema.parse({ select: 123 });
 
-    expect(parsed.select).toEqual(['id', 'status', 'createdAt', 'meta.score']);
+    expect(parsed.select).toEqual(['id', 'status', 'meta.score']);
   });
 
   /* ---------------------------------- */
@@ -241,14 +235,14 @@ describe('select', () => {
     const parsed = queryParamsSchema.parse({});
     const v = validatorSchema(parsed);
 
-    // id + createdAt present => valid
+    // id + status present => valid
     expect(() =>
       v.parse({
-        data: [{ id: 1, createdAt: new Date('2022-01-01T00:00:00Z') }],
+        data: [{ id: 1, status: 'active' }],
       }),
     ).not.toThrow();
 
-    // createdAt missing => invalid
+    // status missing => invalid
     expect(() =>
       v.parse({
         data: [{ id: 1 }],
@@ -271,5 +265,69 @@ describe('select', () => {
     const v = validatorSchema();
 
     expect(() => v.parse({ data: [] })).not.toThrow();
+  });
+
+  /* ---------------------------------- */
+  /* responseSchema tests */
+  /* ---------------------------------- */
+
+  it('responseSchema: validates using defaultSelect without parsed params', () => {
+    const { responseSchema } = makeSelect();
+
+    // All selectable fields present => valid
+    expect(() =>
+      responseSchema.parse({
+        data: [{ id: 1, status: 'active', meta: { score: 42 } }],
+      }),
+    ).not.toThrow();
+  });
+
+  it('responseSchema: rejects missing required fields', () => {
+    const { responseSchema } = makeSelect();
+
+    // meta.score missing => invalid
+    expect(() =>
+      responseSchema.parse({
+        data: [{ id: 1, status: 'active' }],
+      }),
+    ).toThrow();
+  });
+
+  it('responseSchema: accepts empty data array', () => {
+    const { responseSchema } = makeSelect();
+
+    expect(() => responseSchema.parse({ data: [] })).not.toThrow();
+  });
+
+  it('responseSchema: is equivalent to validatorSchema() called without args', () => {
+    const { responseSchema, validatorSchema } = makeSelect();
+
+    const v = validatorSchema();
+    const payload = {
+      data: [{ id: 1, status: 'active', meta: { score: 42 } }],
+    };
+
+    const fromResponse = responseSchema.parse(payload);
+    const fromValidator = v.parse(payload);
+
+    expect(fromResponse).toEqual(fromValidator);
+  });
+
+  it('responseSchema: uses partial defaultSelect when configured', () => {
+    const { responseSchema } = makeSelectWithPartialDefault();
+
+    // id + status present => valid (defaultSelect: ['id', 'status'])
+    expect(() =>
+      responseSchema.parse({
+        data: [{ id: 1, status: 'active' }],
+      }),
+    ).not.toThrow();
+
+    // status missing => invalid
+    expect(() =>
+      responseSchema.parse({
+        data: [{ id: 1 }],
+      }),
+    ).toThrow();
   });
 });

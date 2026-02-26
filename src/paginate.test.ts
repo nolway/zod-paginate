@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
-import { paginate, PaginationQueryParams } from './paginate';
+import { paginate, type PaginateResult } from './paginate';
 
 /**
  * Zod model used to validate Path<T> / projection / cursor type.
@@ -15,10 +15,7 @@ const ModelSchema = z.object({
   }),
 });
 
-function makeLimitOffset(): {
-  queryParamsSchema: z.ZodType<PaginationQueryParams<typeof ModelSchema>>;
-  validatorSchema: (parsed?: PaginationQueryParams<typeof ModelSchema>) => z.ZodType;
-} {
+function makeLimitOffset(): PaginateResult<typeof ModelSchema> {
   return paginate({
     paginationType: 'LIMIT_OFFSET',
     dataSchema: ModelSchema,
@@ -37,10 +34,7 @@ function makeLimitOffset(): {
   });
 }
 
-function makeCursor(): {
-  queryParamsSchema: z.ZodType<PaginationQueryParams<typeof ModelSchema>>;
-  validatorSchema: (parsed?: PaginationQueryParams<typeof ModelSchema>) => z.ZodType;
-} {
+function makeCursor(): PaginateResult<typeof ModelSchema> {
   return paginate({
     paginationType: 'CURSOR',
     dataSchema: ModelSchema,
@@ -548,7 +542,7 @@ describe('paginate', () => {
     // defaultSelect ["*"] should expand to selectable
     const parsed = queryParamsSchema.parse({ page: '1', limit: '10' });
 
-    const v = validatorSchema(parsed);
+    const v = validatorSchema(parsed.pagination);
 
     expect(() =>
       v.parse({
@@ -599,7 +593,7 @@ describe('paginate', () => {
       limit: '10',
     });
 
-    const v = validatorSchema(parsed);
+    const v = validatorSchema(parsed.pagination);
 
     expect(() =>
       v.parse({
@@ -643,7 +637,7 @@ describe('paginate', () => {
       cursor: '123',
     });
 
-    const v = validatorSchema(parsed);
+    const v = validatorSchema(parsed.pagination);
 
     // ✅ cursor accepts number
     expect(() =>
@@ -699,18 +693,19 @@ describe('paginate', () => {
 
     const parsed = queryParamsSchema.parse({
       cursor: '123',
-      select: 'id,status',
+      select: 'id,status,createdAt',
     });
 
-    const v = validatorSchema(parsed);
+    const v = validatorSchema(parsed.pagination);
 
-    // should require id + status
+    // should require id + status + createdAt
     expect(() =>
       v.parse({
         data: [
           {
             id: 1,
             status: 'active',
+            createdAt: new Date(),
           },
         ],
         pagination: {
@@ -803,5 +798,94 @@ describe('paginate', () => {
 
     expect('filters' in parsed.pagination).toBe(false);
     expect(parsed.pagination.filters).toBeUndefined();
+  });
+
+  /* ---------------------------------- */
+  /* responseSchema tests */
+  /* ---------------------------------- */
+
+  it('LIMIT_OFFSET responseSchema: validates a complete response without parsed params', () => {
+    const { responseSchema } = makeLimitOffset();
+
+    expect(() =>
+      responseSchema.parse({
+        data: [{ id: 1, status: 'active', createdAt: new Date(), meta: { score: 10 } }],
+        pagination: {
+          itemsPerPage: 20,
+          totalItems: 1,
+          currentPage: 1,
+          totalPages: 1,
+        },
+      }),
+    ).not.toThrow();
+  });
+
+  it('LIMIT_OFFSET responseSchema: rejects missing pagination fields', () => {
+    const { responseSchema } = makeLimitOffset();
+
+    expect(() =>
+      responseSchema.parse({
+        data: [],
+        pagination: { itemsPerPage: 20 },
+      }),
+    ).toThrow();
+  });
+
+  it('LIMIT_OFFSET responseSchema: accepts empty data array', () => {
+    const { responseSchema } = makeLimitOffset();
+
+    expect(() =>
+      responseSchema.parse({
+        data: [],
+        pagination: {
+          itemsPerPage: 20,
+          totalItems: 0,
+          currentPage: 1,
+          totalPages: 0,
+        },
+      }),
+    ).not.toThrow();
+  });
+
+  it('LIMIT_OFFSET responseSchema: is equivalent to validatorSchema() without args', () => {
+    const { responseSchema, validatorSchema } = makeLimitOffset();
+
+    const payload = {
+      data: [{ id: 1, status: 'ok', createdAt: new Date(), meta: { score: 5 } }],
+      pagination: { itemsPerPage: 20, totalItems: 1, currentPage: 1, totalPages: 1 },
+    };
+
+    const fromResponse = responseSchema.parse(payload);
+    const fromValidator = validatorSchema().parse(payload);
+
+    expect(fromResponse).toEqual(fromValidator);
+  });
+
+  it('CURSOR responseSchema: validates a complete cursor response', () => {
+    const { responseSchema } = makeCursor();
+
+    expect(() =>
+      responseSchema.parse({
+        data: [{ id: 1, status: 'active', createdAt: new Date(), meta: { score: 10 } }],
+        pagination: {
+          itemsPerPage: 10,
+          cursor: 1,
+        },
+      }),
+    ).not.toThrow();
+  });
+
+  it('CURSOR responseSchema: rejects non-number cursor when cursorProperty is number', () => {
+    const { responseSchema } = makeCursor();
+
+    expect(() =>
+      responseSchema.parse({
+        data: [],
+        pagination: {
+          itemsPerPage: 10,
+          cursor: 'not-a-number',
+        },
+      }),
+    ).toThrow();
   });
 });
