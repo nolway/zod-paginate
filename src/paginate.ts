@@ -644,6 +644,9 @@ export interface CommonQueryConfigFromSchema<
   maxLimit?: number;
 }
 
+/**
+ * Full query config type, which includes pagination-specific properties depending on the pagination type.
+ */
 export type QueryConfigFromSchema<
   TSchema extends DataSchema,
   TSelectable extends AllowedPath<TSchema> = AllowedPath<TSchema>,
@@ -744,7 +747,7 @@ function validateConditionType(expected: FieldType, cond: Condition, field: stri
 }
 
 /* ---------------------------------- */
-/* Sort defaults (typed, no "as") */
+/* Sort defaults */
 /* ---------------------------------- */
 
 export interface SortItemTyped<TSchema extends DataSchema> {
@@ -806,12 +809,22 @@ export interface CursorPaginationPayload<TSchema extends DataSchema> {
   filters?: WhereNode;
 }
 
-export type PaginationPayload<TSchema extends DataSchema> =
-  | LimitOffsetPaginationPayload<TSchema>
-  | CursorPaginationPayload<TSchema>;
+export type PaginationType = 'LIMIT_OFFSET' | 'CURSOR';
 
-export interface PaginationQueryParams<TSchema extends DataSchema> {
-  pagination: PaginationPayload<TSchema>;
+export type PaginationPayload<
+  TSchema extends DataSchema,
+  TType extends PaginationType = PaginationType,
+> = TType extends 'LIMIT_OFFSET'
+  ? LimitOffsetPaginationPayload<TSchema>
+  : TType extends 'CURSOR'
+    ? CursorPaginationPayload<TSchema>
+    : never;
+
+export interface PaginationQueryParams<
+  TSchema extends DataSchema,
+  TType extends PaginationType = PaginationType,
+> {
+  pagination: PaginationPayload<TSchema, TType>;
 }
 
 /* ---------------------------------- */
@@ -853,7 +866,12 @@ export interface CursorPaginationResponse<
 export type PaginationResponse<
   TSchema extends DataSchema,
   TSelect extends AllowedPath<TSchema> = AllowedPath<TSchema>,
-> = LimitOffsetPaginationResponse<TSchema, TSelect> | CursorPaginationResponse<TSchema, TSelect>;
+  TType extends PaginationType = PaginationType,
+> = TType extends 'LIMIT_OFFSET'
+  ? LimitOffsetPaginationResponse<TSchema, TSelect>
+  : TType extends 'CURSOR'
+    ? CursorPaginationResponse<TSchema, TSelect>
+    : never;
 
 /**
  * Result type returned by `paginate()`. Use this instead of
@@ -867,12 +885,13 @@ export type PaginationResponse<
 export interface PaginateResult<
   TSchema extends DataSchema,
   TSelectable extends AllowedPath<TSchema> = AllowedPath<TSchema>,
+  TType extends PaginationType = PaginationType,
 > {
-  queryParamsSchema: z.ZodType<PaginationQueryParams<TSchema>>;
+  queryParamsSchema: z.ZodType<PaginationQueryParams<TSchema, TType>>;
   validatorSchema: (
     parsed?: PaginationPayload<TSchema>,
-  ) => z.ZodType<PaginationResponse<TSchema, TSelectable>>;
-  responseSchema: z.ZodType<PaginationResponse<TSchema, TSelectable>>;
+  ) => z.ZodType<PaginationResponse<TSchema, TSelectable, TType>>;
+  responseSchema: z.ZodType<PaginationResponse<TSchema, TSelectable, TType>>;
 }
 
 function callMethodIfReturnsZod(obj: unknown, methodName: string): z.ZodType | undefined {
@@ -1033,6 +1052,28 @@ function coerceCursorFromProperty<TSchema extends DataSchema>(
  *   - `validatorSchema`: A function that takes the already-parsed query parameters and returns a Zod schema for further validation (e.g. filters).
  *   - `responseSchema`: A pre-built Zod schema for validating the response (uses defaultSelect or all selectable fields).
  */
+export function paginate<
+  TSchema extends DataSchema,
+  const TSelectable extends readonly AllowedPath<TSchema>[],
+>(
+  config: CommonQueryConfigFromSchema<TSchema, TSelectable[number]> & LimitOffsetPaginationConfig,
+): PaginateResult<TSchema, TSelectable[number], 'LIMIT_OFFSET'>;
+
+export function paginate<
+  TSchema extends DataSchema,
+  const TSelectable extends readonly AllowedPath<TSchema>[],
+>(
+  config: CommonQueryConfigFromSchema<TSchema, TSelectable[number]> &
+    CursorPaginationConfig<InferData<TSchema>>,
+): PaginateResult<TSchema, TSelectable[number], 'CURSOR'>;
+
+export function paginate<
+  TSchema extends DataSchema,
+  const TSelectable extends readonly AllowedPath<TSchema>[],
+>(
+  config: QueryConfigFromSchema<TSchema, TSelectable[number]>,
+): PaginateResult<TSchema, TSelectable[number]>;
+
 export function paginate<
   TSchema extends DataSchema,
   const TSelectable extends readonly AllowedPath<TSchema>[],

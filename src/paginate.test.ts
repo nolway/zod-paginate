@@ -889,3 +889,179 @@ describe('paginate', () => {
     ).toThrow();
   });
 });
+
+/* ---------------------------------- */
+/* PaginationType narrowing            */
+/* ---------------------------------- */
+
+describe('PaginationType narrowing', () => {
+  it('LIMIT_OFFSET: z.infer narrows pagination to LimitOffsetPaginationResponseMeta', () => {
+    const lo = paginate({
+      paginationType: 'LIMIT_OFFSET',
+      dataSchema: ModelSchema,
+      selectable: ['id', 'status'],
+      sortable: ['id'],
+      defaultLimit: 10,
+      defaultSelect: ['id', 'status'],
+    });
+
+    type Response = z.infer<typeof lo.responseSchema>;
+    type PaginationMeta = Response['pagination'];
+
+    // Statically, totalItems exists on the narrowed type (no union)
+    const check: PaginationMeta = {
+      itemsPerPage: 10,
+      totalItems: 1,
+      currentPage: 1,
+      totalPages: 1,
+    };
+    expect(check.totalItems).toBe(1);
+
+    // Runtime validation works
+    const parsed = lo.responseSchema.parse({
+      data: [{ id: 1, status: 'ok' }],
+      pagination: { itemsPerPage: 10, totalItems: 1, currentPage: 1, totalPages: 1 },
+    });
+    expect(parsed.pagination).toHaveProperty('totalItems');
+  });
+
+  it('CURSOR: z.infer narrows pagination to CursorPaginationResponseMeta', () => {
+    const cur = paginate({
+      paginationType: 'CURSOR',
+      dataSchema: ModelSchema,
+      cursorProperty: 'id',
+      selectable: ['id', 'status'],
+      sortable: ['id'],
+      defaultLimit: 10,
+      defaultSelect: ['id', 'status'],
+    });
+
+    type Response = z.infer<typeof cur.responseSchema>;
+    type PaginationMeta = Response['pagination'];
+
+    // Statically, cursor exists on the narrowed type (no union)
+    const check: PaginationMeta = {
+      itemsPerPage: 10,
+      cursor: 42,
+    };
+    expect(check.cursor).toBe(42);
+
+    // Runtime validation works
+    const parsed = cur.responseSchema.parse({
+      data: [{ id: 1, status: 'ok' }],
+      pagination: { itemsPerPage: 10, cursor: 1 },
+    });
+    expect(parsed.pagination).toHaveProperty('cursor');
+  });
+
+  it('LIMIT_OFFSET: queryParamsSchema narrows payload to LimitOffsetPaginationPayload', () => {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const lo = paginate({
+      paginationType: 'LIMIT_OFFSET',
+      dataSchema: ModelSchema,
+      selectable: ['id'],
+      sortable: ['id'],
+      defaultLimit: 5,
+    });
+
+    type QP = z.infer<typeof lo.queryParamsSchema>;
+    type Payload = QP['pagination'];
+
+    // Statically, page exists on the narrowed payload (no union)
+    const check: Payload = {
+      type: 'LIMIT_OFFSET',
+      limit: 5,
+      page: 1,
+    };
+    expect(check.type).toBe('LIMIT_OFFSET');
+  });
+
+  it('CURSOR: queryParamsSchema narrows payload to CursorPaginationPayload', () => {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const cur = paginate({
+      paginationType: 'CURSOR',
+      dataSchema: ModelSchema,
+      cursorProperty: 'id',
+      selectable: ['id'],
+      sortable: ['id'],
+      defaultLimit: 5,
+    });
+
+    type QP = z.infer<typeof cur.queryParamsSchema>;
+    type Payload = QP['pagination'];
+
+    // Statically, cursorProperty exists on the narrowed payload (no union)
+    const check: Payload = {
+      type: 'CURSOR',
+      cursorProperty: 'id',
+      cursor: 42,
+    };
+    expect(check.type).toBe('CURSOR');
+  });
+
+  it('PaginateResult<…, "LIMIT_OFFSET"> is assignable from paginate() return', () => {
+    // Explicit return type annotation with TType works
+    function make(): PaginateResult<typeof ModelSchema, 'id' | 'status', 'LIMIT_OFFSET'> {
+      return paginate({
+        paginationType: 'LIMIT_OFFSET',
+        dataSchema: ModelSchema,
+        selectable: ['id', 'status'],
+        sortable: ['id'],
+        defaultLimit: 10,
+        defaultSelect: ['id', 'status'],
+      });
+    }
+
+    const { responseSchema } = make();
+    expect(() =>
+      responseSchema.parse({
+        data: [{ id: 1, status: 'ok' }],
+        pagination: { itemsPerPage: 10, totalItems: 1, currentPage: 1, totalPages: 1 },
+      }),
+    ).not.toThrow();
+  });
+
+  it('PaginateResult<…, "CURSOR"> is assignable from paginate() return', () => {
+    function make(): PaginateResult<typeof ModelSchema, 'id' | 'status', 'CURSOR'> {
+      return paginate({
+        paginationType: 'CURSOR',
+        dataSchema: ModelSchema,
+        cursorProperty: 'id',
+        selectable: ['id', 'status'],
+        sortable: ['id'],
+        defaultLimit: 10,
+        defaultSelect: ['id', 'status'],
+      });
+    }
+
+    const { responseSchema } = make();
+    expect(() =>
+      responseSchema.parse({
+        data: [{ id: 1, status: 'ok' }],
+        pagination: { itemsPerPage: 10, cursor: 1 },
+      }),
+    ).not.toThrow();
+  });
+
+  it('backward compat: PaginateResult without TType still works (union)', () => {
+    // This is the existing pattern — no TType specified
+    function make(): PaginateResult<typeof ModelSchema> {
+      return paginate({
+        paginationType: 'LIMIT_OFFSET',
+        dataSchema: ModelSchema,
+        selectable: ['id', 'status'],
+        sortable: ['id'],
+        defaultLimit: 10,
+        defaultSelect: ['id', 'status'],
+      });
+    }
+
+    const { responseSchema } = make();
+    expect(() =>
+      responseSchema.parse({
+        data: [{ id: 1, status: 'ok' }],
+        pagination: { itemsPerPage: 10, totalItems: 1, currentPage: 1, totalPages: 1 },
+      }),
+    ).not.toThrow();
+  });
+});

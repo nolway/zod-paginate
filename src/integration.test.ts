@@ -814,8 +814,6 @@ describe('Integration: Edge cases', () => {
     // Should parse with no params
     const parsed = queryParamsSchema.parse({});
 
-    if (parsed.pagination.type !== 'LIMIT_OFFSET') return;
-
     expect(parsed.pagination.limit).toBeUndefined();
     expect(parsed.pagination.sortBy).toBeUndefined();
     expect(parsed.pagination.select).toBeUndefined();
@@ -939,8 +937,6 @@ describe('Integration: Edge cases', () => {
     const parsed = queryParamsSchema.parse({
       cursor: 'my-article-slug',
     });
-
-    if (parsed.pagination.type !== 'CURSOR') return;
 
     expect(parsed.pagination.cursor).toBe('my-article-slug');
     expect(typeof parsed.pagination.cursor).toBe('string');

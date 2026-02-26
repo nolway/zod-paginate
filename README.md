@@ -100,23 +100,44 @@ Returns:
 - `responseSchema`: pre-built Zod schema for validating responses using `defaultSelect` (or all selectable fields). Equivalent to calling `validatorSchema()` with no arguments.
 
 ```ts
+// Overload 1 — LIMIT_OFFSET
 export function paginate<
   TSchema extends DataSchema,
   const TSelectable extends readonly AllowedPath<TSchema>[],
 >(
-  config: QueryConfigFromSchema<TSchema, TSelectable[number]>,
-): PaginateResult<TSchema, TSelectable[number]>;
+  config: CommonQueryConfigFromSchema<TSchema, TSelectable[number]> & { paginationType: "LIMIT_OFFSET" },
+): PaginateResult<TSchema, TSelectable[number], "LIMIT_OFFSET">;
+
+// Overload 2 — CURSOR
+export function paginate<
+  TSchema extends DataSchema,
+  const TSelectable extends readonly AllowedPath<TSchema>[],
+>(
+  config: CommonQueryConfigFromSchema<TSchema, TSelectable[number]> & CursorPaginationConfig<…>,
+): PaginateResult<TSchema, TSelectable[number], "CURSOR">;
 ```
 
-#### `PaginateResult<TSchema, TSelectable?>`
+#### `PaginateResult<TSchema, TSelectable?, TType?>`
 
-Use `PaginateResult<TSchema, TSelectable>` instead of `ReturnType<typeof paginate>` when you need an explicit return type — it preserves the generics so that `z.infer<typeof responseSchema>` correctly narrows the `data` keys to the configured `selectable` paths.
+Use `PaginateResult<TSchema, TSelectable, TType>` instead of `ReturnType<typeof paginate>` when you need an explicit return type — it preserves the generics so that `z.infer<typeof responseSchema>` correctly narrows both `data` keys and pagination metadata.
+
+- **`TType`** (`'LIMIT_OFFSET' | 'CURSOR'`): When specified, narrows the response/payload types so you get `totalItems`/`totalPages` (LIMIT_OFFSET) or `cursor` (CURSOR) without manual narrowing. Defaults to the union if omitted.
 
 ```ts
 import { paginate, type PaginateResult } from "zod-paginate";
 
-// TSelectable defaults to all paths if omitted
-function createPaginator(): PaginateResult<typeof ModelSchema, "id" | "status"> {
+// TSelectable defaults to all paths if omitted, TType defaults to union
+function createPaginator(): PaginateResult<typeof ModelSchema, "id" | "status", "LIMIT_OFFSET"> {
+  return paginate({
+    paginationType: "LIMIT_OFFSET",
+    dataSchema: ModelSchema,
+    selectable: ["id", "status"],
+    /* … */
+  });
+}
+
+// Without TType — pagination is still a union, but data keys are narrowed
+function createPaginatorUnion(): PaginateResult<typeof ModelSchema, "id" | "status"> {
   return paginate({ dataSchema: ModelSchema, selectable: ["id", "status"], /* … */ });
 }
 ```
@@ -554,6 +575,8 @@ responseSchema.parse({
 // Type-safe: z.infer narrows data keys to selectable paths
 type Response = z.infer<typeof responseSchema>;
 // Response["data"][0] → { id?: unknown; status?: unknown; createdAt?: unknown; meta?: unknown }
+// Response["pagination"] → LimitOffsetPaginationResponseMeta (not a union!)
+// Response["pagination"].totalItems → number  ✓ (no manual narrowing needed)
 ```
 
 Or using `validatorSchema(parsed)` for request-aware projection:
