@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.2.0](https://github.com/nolway/zod-paginate/compare/v1.1.1...v1.2.0) (2026-02-26)
+
+
+### Features
+
+* improve typing ([0e555fb](https://github.com/nolway/zod-paginate/commit/0e555fb0d2d24a49713d5403e413f10c2bba3483))
+
+
+### Miscellaneous Chores
+
+* release 1.2.0 ([23cb741](https://github.com/nolway/zod-paginate/commit/23cb7411edd0a9167172c00046a727a7dcdfdec0))
+
 ## [1.1.1](https://github.com/nolway/zod-paginate/compare/v1.1.0...v1.1.1) (2026-02-20)
 
 
