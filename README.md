@@ -11,6 +11,7 @@ It is designed for Node.js HTTP stacks where query parameters arrive as strings 
 - Supports a **filter DSL** with `$` operators and **nested AND/OR grouping**.
 - Provides a **response validator** (`validatorSchema` / `responseSchema`) to validate API responses against the projected schema. `z.infer<typeof responseSchema>` gives you **key autocompletion** narrowed to configured `selectable` paths.
 - Also exports a lightweight **`select()`** utility for field-projection-only use cases.
+- Compatible with **OpenAPI tooling** ([zod-openapi](https://github.com/samchungy/zod-openapi) etc.).
 
 > This library does **not** bind DB queries automatically.
 > It gives you a safe parsed structure; you decide how to map it to your data layer.

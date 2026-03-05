@@ -1174,7 +1174,8 @@ export function paginate<
   });
 
   const queryParamsSchema: z.ZodType<PaginationQueryParams<TSchema>> = z
-    .record(z.string(), z.unknown())
+    .object({})
+    .catchall(z.unknown())
     .transform(
       (
         q,

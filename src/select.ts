@@ -369,7 +369,8 @@ export function select<
   });
 
   const queryParamsSchema: z.ZodType<SelectQueryParams<TSchema, TSelectable[number]>> = z
-    .record(z.string(), z.unknown())
+    .object({})
+    .catchall(z.unknown())
     .transform((q): Record<string, unknown> => {
       const raw = q.select;
       return {
