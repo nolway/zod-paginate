@@ -368,8 +368,20 @@ export function select<
     select: SelectSchema.optional(),
   });
 
+  const selectableList = config.selectable.map((f) => `${f}`).join(', ');
+  const defaultSelectDesc =
+    config.defaultSelect === '*' ? '*' : [...config.defaultSelect].join(', ');
+
   const queryParamsSchema: z.ZodType<SelectQueryParams<TSchema, TSelectable[number]>> = z
-    .object({})
+    .object({
+      select: z
+        .string()
+        .optional()
+        .meta({
+          description: `Comma-separated list of fields to include in the response. Allowed: ${selectableList}. Use "*" to select all. Default: ${defaultSelectDesc}`,
+          openapi: { example: selectableList },
+        }),
+    })
     .catchall(z.unknown())
     .transform((q): Record<string, unknown> => {
       const raw = q.select;

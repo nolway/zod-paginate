@@ -63,13 +63,17 @@ const StringOrStringArraySchema = z
 /* Sort */
 /* ---------------------------------- */
 
-export const SortDirectionSchema = z.enum(['ASC', 'DESC']);
+export const SortDirectionSchema = z.enum(['ASC', 'DESC']).meta({
+  description: 'Sort direction',
+});
 export type SortDirection = z.infer<typeof SortDirectionSchema>;
 
-export const SortItemSchema = z.object({
-  property: z.string().min(1),
-  direction: SortDirectionSchema,
-});
+export const SortItemSchema = z
+  .object({
+    property: z.string().min(1).meta({ description: 'Field name to sort by' }),
+    direction: SortDirectionSchema,
+  })
+  .meta({ description: 'A single sort instruction (field + direction)' });
 export type SortItem = z.infer<typeof SortItemSchema>;
 
 /**
@@ -163,54 +167,59 @@ type OpsForFieldType<TKind extends FieldType> = TKind extends 'string'
       ? CommonOps | ComparableOps
       : Operator;
 
-export const ConditionSchema = z.discriminatedUnion('op', [
-  z.object({
-    group: IntegerStringSchema,
-    combinator: CombinatorSchema.optional(),
-    op: z.literal('$null'),
-    not: z.literal(true).optional(),
-  }),
+export const ConditionSchema = z
+  .discriminatedUnion('op', [
+    z.object({
+      group: IntegerStringSchema,
+      combinator: CombinatorSchema.optional(),
+      op: z.literal('$null'),
+      not: z.literal(true).optional(),
+    }),
 
-  z.object({
-    group: IntegerStringSchema,
-    combinator: CombinatorSchema.optional(),
-    op: z.literal('$eq'),
-    not: z.literal(true).optional(),
-    value: NumOrDateSchema,
-  }),
+    z.object({
+      group: IntegerStringSchema,
+      combinator: CombinatorSchema.optional(),
+      op: z.literal('$eq'),
+      not: z.literal(true).optional(),
+      value: NumOrDateSchema,
+    }),
 
-  z.object({
-    group: IntegerStringSchema,
-    combinator: CombinatorSchema.optional(),
-    op: z.enum(['$ilike', '$sw']),
-    not: z.literal(true).optional(),
-    value: z.string(),
-  }),
+    z.object({
+      group: IntegerStringSchema,
+      combinator: CombinatorSchema.optional(),
+      op: z.enum(['$ilike', '$sw']),
+      not: z.literal(true).optional(),
+      value: z.string(),
+    }),
 
-  z.object({
-    group: IntegerStringSchema,
-    combinator: CombinatorSchema.optional(),
-    op: z.enum(['$in', '$contains']),
-    not: z.literal(true).optional(),
-    value: z.array(z.string()),
-  }),
+    z.object({
+      group: IntegerStringSchema,
+      combinator: CombinatorSchema.optional(),
+      op: z.enum(['$in', '$contains']),
+      not: z.literal(true).optional(),
+      value: z.array(z.string()),
+    }),
 
-  z.object({
-    group: IntegerStringSchema,
-    combinator: CombinatorSchema.optional(),
-    op: z.enum(['$gt', '$gte', '$lt', '$lte']),
-    not: z.literal(true).optional(),
-    value: NumOrDateSchema,
-  }),
+    z.object({
+      group: IntegerStringSchema,
+      combinator: CombinatorSchema.optional(),
+      op: z.enum(['$gt', '$gte', '$lt', '$lte']),
+      not: z.literal(true).optional(),
+      value: NumOrDateSchema,
+    }),
 
-  z.object({
-    group: IntegerStringSchema,
-    combinator: CombinatorSchema.optional(),
-    op: z.literal('$btw'),
-    not: z.literal(true).optional(),
-    value: z.tuple([NumOrDateSchema, NumOrDateSchema]),
-  }),
-]);
+    z.object({
+      group: IntegerStringSchema,
+      combinator: CombinatorSchema.optional(),
+      op: z.literal('$btw'),
+      not: z.literal(true).optional(),
+      value: z.tuple([NumOrDateSchema, NumOrDateSchema]),
+    }),
+  ])
+  .meta({
+    openapi: { ref: 'FilterCondition' },
+    description: 'A single filter condition with operator, optional negation, and value',
+  });
 
 export type Condition = z.infer<typeof ConditionSchema>;
 
@@ -252,13 +261,19 @@ function fold(op: Combinator | undefined, left: WhereNode, right: WhereNode): Wh
   return and([left, right]);
 }
 
-const WhereNodeSchema: z.ZodType<WhereNode> = z.lazy(() =>
-  z.union([
-    z.object({ type: z.literal('filter'), field: z.string(), condition: ConditionSchema }),
-    z.object({ type: z.literal('and'), items: z.array(WhereNodeSchema) }),
-    z.object({ type: z.literal('or'), items: z.array(WhereNodeSchema) }),
-  ]),
-);
+const WhereNodeSchema: z.ZodType<WhereNode> = z
+  .lazy(() =>
+    z.union([
+      z.object({ type: z.literal('filter'), field: z.string(), condition: ConditionSchema }),
+      z.object({ type: z.literal('and'), items: z.array(WhereNodeSchema) }),
+      z.object({ type: z.literal('or'), items: z.array(WhereNodeSchema) }),
+    ]),
+  )
+  .meta({
+    openapi: { ref: 'WhereNode' },
+    description:
+      'Recursive filter AST node: a single filter condition, or an AND/OR group of nodes',
+  });
 
 /* ---------------------------------- */
 /* Group tree */
@@ -1173,8 +1188,69 @@ export function paginate<
     ),
   });
 
+  /*
+   * Build the root ZodObject with explicit named properties so that
+   * OpenAPI tooling (zod-openapi, fastify-zod-openapi) can introspect
+   * the query parameters. Dynamic keys (filter.*, group.*) pass through
+   * via .catchall(z.unknown()). The actual validation/transforms happen
+   * in the piped baseSchema below.
+   */
+  const rootShape: Record<string, z.ZodType> = {
+    limit: z
+      .string()
+      .optional()
+      .meta({
+        description: `Maximum number of items to return per page (default: ${String(config.defaultLimit)}, max: ${String(config.maxLimit)})`,
+        openapi: { example: String(config.defaultLimit) },
+      }),
+  };
+
+  if (config.paginationType === 'LIMIT_OFFSET') {
+    rootShape.page = z
+      .string()
+      .optional()
+      .meta({
+        description: 'Page number (1-based)',
+        openapi: { example: '1' },
+      });
+  } else {
+    rootShape.cursor = z
+      .string()
+      .optional()
+      .meta({
+        description: 'Cursor value for cursor-based pagination',
+        openapi: { example: '42' },
+      });
+  }
+
+  if (config.sortable && config.sortable.length > 0) {
+    const defaultSortDesc =
+      config.defaultSortBy && config.defaultSortBy.length > 0
+        ? config.defaultSortBy.map((s) => `${s.property}:${s.direction}`).join(', ')
+        : 'none';
+    rootShape.sortBy = z
+      .union([z.string(), z.array(z.string())])
+      .optional()
+      .meta({
+        description: `Sort by field and direction. Format: "field:ASC" or "field:DESC". Allowed fields: ${config.sortable.join(', ')}. Default: ${defaultSortDesc}`,
+        openapi: { example: `${String(config.sortable[0])}:ASC` },
+      });
+  }
+
+  if (config.selectable && config.selectable.length > 0) {
+    const defaultSelectDesc =
+      config.defaultSelect === '*' ? '*' : [...config.defaultSelect].join(', ');
+    rootShape.select = z
+      .string()
+      .optional()
+      .meta({
+        description: `Comma-separated list of fields to return. Use "*" for all. Allowed fields: ${config.selectable.join(', ')}. Default: ${defaultSelectDesc}`,
+        openapi: { example: config.selectable.join(',') },
+      });
+  }
+
   const queryParamsSchema: z.ZodType<PaginationQueryParams<TSchema>> = z
-    .object({})
+    .object(rootShape)
     .catchall(z.unknown())
     .transform(
       (
@@ -1440,21 +1516,26 @@ export function paginate<
     if (config.paginationType === 'LIMIT_OFFSET') {
       return z.object({
         data: dataArraySchema,
-        pagination: z.object({
-          itemsPerPage: z.number(),
-          totalItems: z.number(),
-          currentPage: z.number(),
-          totalPages: z.number(),
-          sortBy: z
-            .array(
-              z.object({
-                property: z.string(),
-                direction: SortDirectionSchema,
-              }),
-            )
-            .optional(),
-          filter: WhereNodeSchema.optional(),
-        }),
+        pagination: z
+          .object({
+            itemsPerPage: z.number().meta({ description: 'Number of items returned per page' }),
+            totalItems: z
+              .number()
+              .meta({ description: 'Total number of items matching the query' }),
+            currentPage: z.number().meta({ description: 'Current page number (1-based)' }),
+            totalPages: z.number().meta({ description: 'Total number of pages' }),
+            sortBy: z
+              .array(
+                z.object({
+                  property: z.string(),
+                  direction: SortDirectionSchema,
+                }),
+              )
+              .optional()
+              .meta({ description: 'Applied sort order' }),
+            filter: WhereNodeSchema.optional().meta({ description: 'Applied filter AST' }),
+          })
+          .meta({ description: 'Pagination metadata for limit/offset mode' }),
       });
     }
 
@@ -1462,19 +1543,24 @@ export function paginate<
 
     return z.object({
       data: dataArraySchema,
-      pagination: z.object({
-        itemsPerPage: z.number(),
-        cursor: cursorType,
-        sortBy: z
-          .array(
-            z.object({
-              property: z.string(),
-              direction: SortDirectionSchema,
-            }),
-          )
-          .optional(),
-        filter: WhereNodeSchema.optional(),
-      }),
+      pagination: z
+        .object({
+          itemsPerPage: z.number().meta({ description: 'Number of items returned per page' }),
+          cursor: cursorType.meta({
+            description: 'Cursor value pointing to the last item returned',
+          }),
+          sortBy: z
+            .array(
+              z.object({
+                property: z.string(),
+                direction: SortDirectionSchema,
+              }),
+            )
+            .optional()
+            .meta({ description: 'Applied sort order' }),
+          filter: WhereNodeSchema.optional().meta({ description: 'Applied filter AST' }),
+        })
+        .meta({ description: 'Pagination metadata for cursor mode' }),
     });
   };
 

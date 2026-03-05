@@ -1046,3 +1046,115 @@ describe('Integration: Edge cases', () => {
     ).not.toThrow();
   });
 });
+
+/* ========================================================================= */
+/*  OpenAPI compatibility: queryParamsSchema exposes named properties         */
+/* ========================================================================= */
+
+/**
+ * Unwrap the root ZodObject from a pipeline/transform chain,
+ * mimicking what zod-openapi does.
+ */
+function unwrapRootZodObject(schema: z.ZodType): Record<string, unknown> | undefined {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let current: any = schema;
+
+  for (let i = 0; i < 10; i++) {
+    const def = current?._zod?.def;
+    if (!def) return undefined;
+
+    if (def.type === 'object' && typeof def.shape === 'object' && def.shape !== null) {
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+      return def.shape;
+    }
+
+    if (def.type === 'pipe' && def.in) {
+      current = def.in;
+      continue;
+    }
+
+    return undefined;
+  }
+
+  return undefined;
+}
+
+describe('OpenAPI compatibility: queryParamsSchema exposes named properties', () => {
+  it('LIMIT_OFFSET schema exposes limit, page, sortBy, select', () => {
+    const { queryParamsSchema } = paginate({
+      paginationType: 'LIMIT_OFFSET',
+      dataSchema: UserSchema,
+      selectable: ['id', 'username'],
+      sortable: ['id'],
+      defaultLimit: 20,
+      maxLimit: 100,
+      defaultSelect: '*',
+    });
+
+    const shape = unwrapRootZodObject(queryParamsSchema);
+    expect(shape).toBeDefined();
+
+    const keys = Object.keys(shape ?? {});
+    expect(keys).toContain('limit');
+    expect(keys).toContain('page');
+    expect(keys).toContain('sortBy');
+    expect(keys).toContain('select');
+    expect(keys).not.toContain('cursor');
+  });
+
+  it('CURSOR schema exposes limit, cursor but not page', () => {
+    const { queryParamsSchema } = paginate({
+      paginationType: 'CURSOR',
+      dataSchema: ArticleSchema,
+      cursorProperty: 'id',
+      selectable: ['id', 'title'],
+      sortable: ['id'],
+      defaultLimit: 20,
+      maxLimit: 50,
+      defaultSelect: ['id', 'title'],
+    });
+
+    const shape = unwrapRootZodObject(queryParamsSchema);
+    expect(shape).toBeDefined();
+
+    const keys = Object.keys(shape ?? {});
+    expect(keys).toContain('limit');
+    expect(keys).toContain('cursor');
+    expect(keys).toContain('sortBy');
+    expect(keys).toContain('select');
+    expect(keys).not.toContain('page');
+  });
+
+  it('schema without sortable/selectable omits sortBy/select', () => {
+    const { queryParamsSchema } = paginate({
+      paginationType: 'LIMIT_OFFSET',
+      dataSchema: UserSchema,
+      defaultLimit: 10,
+      maxLimit: 50,
+      defaultSelect: '*',
+    });
+
+    const shape = unwrapRootZodObject(queryParamsSchema);
+    expect(shape).toBeDefined();
+
+    const keys = Object.keys(shape ?? {});
+    expect(keys).toContain('limit');
+    expect(keys).toContain('page');
+    expect(keys).not.toContain('sortBy');
+    expect(keys).not.toContain('select');
+  });
+
+  it('select() standalone exposes select property', () => {
+    const { queryParamsSchema } = select({
+      dataSchema: UserSchema,
+      selectable: ['id', 'username'],
+      defaultSelect: ['id'],
+    });
+
+    const shape = unwrapRootZodObject(queryParamsSchema);
+    expect(shape).toBeDefined();
+
+    const keys = Object.keys(shape ?? {});
+    expect(keys).toContain('select');
+  });
+});

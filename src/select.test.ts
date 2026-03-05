@@ -99,13 +99,11 @@ describe('select', () => {
     expect(() => queryParamsSchema.parse({ select: 'id,unknownField' })).toThrow();
   });
 
-  it('ignores non-string values for select', () => {
+  it('rejects non-string values for select', () => {
     const { queryParamsSchema } = makeSelect();
 
-    // select is not a string => falls back to defaultSelect
-    const parsed = queryParamsSchema.parse({ select: 123 });
-
-    expect(parsed.select).toEqual(['id', 'status', 'meta.score']);
+    // select must be a string (query params are always strings in HTTP)
+    expect(() => queryParamsSchema.parse({ select: 123 })).toThrow();
   });
 
   /* ---------------------------------- */
