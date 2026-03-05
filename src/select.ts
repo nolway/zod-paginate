@@ -82,7 +82,7 @@ export interface SelectableConfig<
   TSelect extends AllowedPath<TSchema> = AllowedPath<TSchema>,
 > {
   selectable?: readonly TSelect[];
-  defaultSelect?: readonly (TSelect | '*')[];
+  defaultSelect: readonly TSelect[] | '*';
 }
 
 /* ---------------------------------- */
@@ -139,16 +139,10 @@ export function computeSelect<
     return [...expanded];
   }
 
-  if (config.defaultSelect) {
-    const expanded = expandSelect(
-      config.defaultSelect.map((x) => `${x}`),
-      config,
-    );
-    if (!expanded) return undefined;
-    return [...expanded];
-  }
-
-  return undefined;
+  const defaultSelectArr = config.defaultSelect === '*' ? ['*'] : [...config.defaultSelect];
+  const expanded = expandSelect(defaultSelectArr, config);
+  if (!expanded) return undefined;
+  return [...expanded];
 }
 
 /* ---------------------------------- */
@@ -289,7 +283,7 @@ export interface SelectConfig<
 > {
   dataSchema: TSchema;
   selectable: readonly TSelect[];
-  defaultSelect?: readonly (TSelect | '*')[];
+  defaultSelect: readonly TSelect[] | '*';
 }
 
 /* ---------------------------------- */
@@ -361,7 +355,12 @@ export interface SelectResult<
 export function select<
   TSchema extends DataSchema,
   const TSelectable extends readonly AllowedPath<TSchema>[],
->(config: SelectConfig<TSchema, TSelectable[number]>): SelectResult<TSchema, TSelectable[number]> {
+>(
+  config: Omit<SelectConfig<TSchema, TSelectable[number]>, 'selectable' | 'defaultSelect'> & {
+    selectable: TSelectable;
+    defaultSelect: readonly NoInfer<TSelectable[number]>[] | '*';
+  },
+): SelectResult<TSchema, TSelectable[number]> {
   const allowedSelectable = new Set<string>();
   for (const f of config.selectable) allowedSelectable.add(`${f}`);
 
@@ -382,17 +381,7 @@ export function select<
       baseSchema
         .superRefine((val, ctx): void => {
           const selectForValidation =
-            val.select ??
-            (config.defaultSelect ? config.defaultSelect.map((x) => `${x}`) : undefined);
-
-          if (!selectForValidation) {
-            ctx.addIssue({
-              code: 'custom',
-              path: ['select'],
-              message: 'select is required (no defaultSelect configured)',
-            });
-            return;
-          }
+            val.select ?? (config.defaultSelect === '*' ? ['*'] : [...config.defaultSelect]);
 
           let index = 0;
           for (const field of selectForValidation) {
@@ -424,7 +413,7 @@ export function select<
           }
         })
         .transform((val): SelectQueryParams<TSchema, TSelectable[number]> => {
-          const resolved = computeSelect(val.select, config);
+          const resolved = computeSelect<TSchema, TSelectable[number]>(val.select, config);
 
           if (!resolved || resolved.length === 0) {
             throw new Error('select resolved to empty (this should not happen after validation)');
@@ -437,13 +426,14 @@ export function select<
   const validatorSchema = (
     parsed?: SelectQueryParams<TSchema, TSelectable[number]>,
   ): z.ZodType<SelectResponse<TSchema, TSelectable[number]>> => {
-    const effectiveSelect = parsed?.select ?? computeSelect(undefined, config) ?? undefined;
+    const effectiveSelect =
+      parsed?.select ?? computeSelect<TSchema, TSelectable[number]>(undefined, config) ?? undefined;
 
     const dataItemSchema =
       effectiveSelect && effectiveSelect.length > 0
         ? projectDataSchema(
             config.dataSchema,
-            effectiveSelect.map((x) => `${x}`),
+            effectiveSelect.map((x): string => x),
           )
         : config.dataSchema;
 

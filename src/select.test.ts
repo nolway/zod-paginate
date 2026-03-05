@@ -16,15 +16,7 @@ function makeSelect() {
   return select({
     dataSchema: ModelSchema,
     selectable: ['id', 'status', 'meta.score'],
-    defaultSelect: ['*'],
-  });
-}
-
-// eslint-disable-next-line @typescript-eslint/explicit-function-return-type
-function makeSelectNoDefault() {
-  return select({
-    dataSchema: ModelSchema,
-    selectable: ['id', 'status', 'meta.score'],
+    defaultSelect: '*',
   });
 }
 
@@ -105,12 +97,6 @@ describe('select', () => {
     const { queryParamsSchema } = makeSelect();
 
     expect(() => queryParamsSchema.parse({ select: 'id,unknownField' })).toThrow();
-  });
-
-  it('rejects when no select provided and no defaultSelect configured', () => {
-    const { queryParamsSchema } = makeSelectNoDefault();
-
-    expect(() => queryParamsSchema.parse({})).toThrow();
   });
 
   it('ignores non-string values for select', () => {

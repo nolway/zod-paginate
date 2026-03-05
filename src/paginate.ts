@@ -638,10 +638,10 @@ export interface CommonQueryConfigFromSchema<
   }>;
 
   defaultSortBy?: readonly { property: AllowedPath<TSchema>; direction: SortDirection }[];
-  defaultLimit?: number;
+  defaultLimit: number;
 
-  defaultSelect?: readonly (TSelectable | '*')[];
-  maxLimit?: number;
+  defaultSelect: readonly TSelectable[] | '*';
+  maxLimit: number;
 }
 
 /**
@@ -676,13 +676,9 @@ function toFilterableRuntime(
   return out;
 }
 
-function computeLimit<TSchema extends DataSchema>(
-  limit: number | undefined,
-  config: QueryConfigFromSchema<TSchema, AllowedPath<TSchema>>,
-): number | undefined {
+function computeLimit(limit: number | undefined, defaultLimit: number): number {
   if (typeof limit === 'number') return limit;
-  if (typeof config.defaultLimit === 'number') return config.defaultLimit;
-  return undefined;
+  return defaultLimit;
 }
 
 /* ---------------------------------- */
@@ -757,7 +753,7 @@ export interface SortItemTyped<TSchema extends DataSchema> {
 
 function computeSortBy<TSchema extends DataSchema>(
   sortByRaw: string[] | undefined,
-  config: QueryConfigFromSchema<TSchema, AllowedPath<TSchema>>,
+  config: Pick<CommonQueryConfigFromSchema<TSchema>, 'sortable' | 'defaultSortBy'>,
 ): SortItemTyped<TSchema>[] | undefined {
   if (sortByRaw) {
     const cleaned = sortByRaw.map((s) => s.trim()).filter(Boolean);
@@ -788,7 +784,7 @@ function computeSortBy<TSchema extends DataSchema>(
 
 export interface LimitOffsetPaginationPayload<TSchema extends DataSchema> {
   type: 'LIMIT_OFFSET';
-  limit?: number;
+  limit: number;
   page?: number;
   sortBy?: SortItemTyped<TSchema>[];
   select?: AllowedPath<TSchema>[];
@@ -801,7 +797,7 @@ export interface LimitOffsetPaginationPayload<TSchema extends DataSchema> {
  */
 export interface CursorPaginationPayload<TSchema extends DataSchema> {
   type: 'CURSOR';
-  limit?: number;
+  limit: number;
   cursor?: number | string;
   cursorProperty: AllowedPath<TSchema>;
   sortBy?: SortItemTyped<TSchema>[];
@@ -1056,29 +1052,94 @@ export function paginate<
   TSchema extends DataSchema,
   const TSelectable extends readonly AllowedPath<TSchema>[],
 >(
-  config: CommonQueryConfigFromSchema<TSchema, TSelectable[number]> & LimitOffsetPaginationConfig,
+  config: Omit<
+    CommonQueryConfigFromSchema<TSchema, TSelectable[number]>,
+    'selectable' | 'defaultSelect' | 'sortable' | 'defaultSortBy' | 'filterable'
+  > &
+    LimitOffsetPaginationConfig & {
+      selectable?: TSelectable;
+      defaultSelect: readonly NoInfer<TSelectable[number]>[] | '*';
+      sortable?: readonly NoInfer<TSelectable[number]>[];
+      defaultSortBy?: readonly {
+        property: NoInfer<TSelectable[number]>;
+        direction: SortDirection;
+      }[];
+      filterable?: Partial<{
+        [P in NoInfer<TSelectable[number]>]: FilterableFieldConfig<
+          FieldTypeFromValue<PathValue<InferData<TSchema>, P>>
+        >;
+      }>;
+    },
 ): PaginateResult<TSchema, TSelectable[number], 'LIMIT_OFFSET'>;
 
 export function paginate<
   TSchema extends DataSchema,
   const TSelectable extends readonly AllowedPath<TSchema>[],
 >(
-  config: CommonQueryConfigFromSchema<TSchema, TSelectable[number]> &
-    CursorPaginationConfig<InferData<TSchema>>,
+  config: Omit<
+    CommonQueryConfigFromSchema<TSchema, TSelectable[number]>,
+    'selectable' | 'defaultSelect' | 'sortable' | 'defaultSortBy' | 'filterable'
+  > &
+    CursorPaginationConfig<InferData<TSchema>> & {
+      selectable?: TSelectable;
+      defaultSelect: readonly NoInfer<TSelectable[number]>[] | '*';
+      sortable?: readonly NoInfer<TSelectable[number]>[];
+      defaultSortBy?: readonly {
+        property: NoInfer<TSelectable[number]>;
+        direction: SortDirection;
+      }[];
+      filterable?: Partial<{
+        [P in NoInfer<TSelectable[number]>]: FilterableFieldConfig<
+          FieldTypeFromValue<PathValue<InferData<TSchema>, P>>
+        >;
+      }>;
+    },
 ): PaginateResult<TSchema, TSelectable[number], 'CURSOR'>;
 
 export function paginate<
   TSchema extends DataSchema,
   const TSelectable extends readonly AllowedPath<TSchema>[],
 >(
-  config: QueryConfigFromSchema<TSchema, TSelectable[number]>,
+  config: Omit<
+    CommonQueryConfigFromSchema<TSchema, TSelectable[number]>,
+    'selectable' | 'defaultSelect' | 'sortable' | 'defaultSortBy' | 'filterable'
+  > & {
+    selectable?: TSelectable;
+    defaultSelect: readonly NoInfer<TSelectable[number]>[] | '*';
+    sortable?: readonly NoInfer<TSelectable[number]>[];
+    defaultSortBy?: readonly {
+      property: NoInfer<TSelectable[number]>;
+      direction: SortDirection;
+    }[];
+    filterable?: Partial<{
+      [P in NoInfer<TSelectable[number]>]: FilterableFieldConfig<
+        FieldTypeFromValue<PathValue<InferData<TSchema>, P>>
+      >;
+    }>;
+  } & (LimitOffsetPaginationConfig | CursorPaginationConfig<InferData<TSchema>>),
 ): PaginateResult<TSchema, TSelectable[number]>;
 
 export function paginate<
   TSchema extends DataSchema,
   const TSelectable extends readonly AllowedPath<TSchema>[],
 >(
-  config: QueryConfigFromSchema<TSchema, TSelectable[number]>,
+  config: Omit<
+    CommonQueryConfigFromSchema<TSchema, TSelectable[number]>,
+    'selectable' | 'defaultSelect' | 'sortable' | 'defaultSortBy' | 'filterable'
+  > & {
+    selectable?: TSelectable;
+    defaultSelect: readonly TSelectable[number][] | '*';
+    sortable?: readonly TSelectable[number][];
+    defaultSortBy?: readonly {
+      property: TSelectable[number];
+      direction: SortDirection;
+    }[];
+    filterable?: Partial<{
+      [P in TSelectable[number]]: FilterableFieldConfig<
+        FieldTypeFromValue<PathValue<InferData<TSchema>, P>>
+      >;
+    }>;
+  } & (LimitOffsetPaginationConfig | CursorPaginationConfig<InferData<TSchema>>),
 ): PaginateResult<TSchema, TSelectable[number]> {
   const allowedSelectable = new Set<string>();
   for (const f of config.selectable ?? []) allowedSelectable.add(`${f}`);
@@ -1177,11 +1238,7 @@ export function paginate<
           }
 
           // limit / maxLimit
-          if (
-            typeof val.limit === 'number' &&
-            typeof config.maxLimit === 'number' &&
-            val.limit > config.maxLimit
-          ) {
+          if (typeof val.limit === 'number' && val.limit > config.maxLimit) {
             ctx.addIssue({
               code: 'custom',
               path: ['limit'],
@@ -1201,9 +1258,9 @@ export function paginate<
           // select allowlist + "*" expandability
           const selectForValidation =
             val.select ??
-            (config.defaultSelect ? config.defaultSelect.map((x) => `${x}`) : undefined);
+            (config.defaultSelect === '*' ? ['*'] : config.defaultSelect.map((x) => `${x}`));
 
-          if (selectForValidation) {
+          {
             let index = 0;
 
             for (const field of selectForValidation) {
@@ -1247,7 +1304,7 @@ export function paginate<
             } else if (sortItems) {
               let index = 0;
               for (const item of sortItems) {
-                if (!allowedSortable.has(`${item.property}`)) {
+                if (!allowedSortable.has(item.property)) {
                   ctx.addIssue({
                     code: 'custom',
                     path: ['sortBy', index],
@@ -1321,7 +1378,7 @@ export function paginate<
           }
         })
         .transform((val): PaginationQueryParams<TSchema> => {
-          const limit = computeLimit(val.limit, config);
+          const limit = computeLimit(val.limit, config.defaultLimit);
           const sortBy = computeSortBy(val.sortBy, config);
           const select = computeSelect(val.select, config);
 

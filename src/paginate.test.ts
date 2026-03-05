@@ -30,7 +30,7 @@ function makeLimitOffset(): PaginateResult<typeof ModelSchema> {
     defaultSortBy: [{ property: 'createdAt', direction: 'DESC' }],
     defaultLimit: 20,
     maxLimit: 100,
-    defaultSelect: ['*'],
+    defaultSelect: '*',
   });
 }
 
@@ -902,6 +902,7 @@ describe('PaginationType narrowing', () => {
       selectable: ['id', 'status'],
       sortable: ['id'],
       defaultLimit: 10,
+      maxLimit: 100,
       defaultSelect: ['id', 'status'],
     });
 
@@ -933,6 +934,7 @@ describe('PaginationType narrowing', () => {
       selectable: ['id', 'status'],
       sortable: ['id'],
       defaultLimit: 10,
+      maxLimit: 100,
       defaultSelect: ['id', 'status'],
     });
 
@@ -962,6 +964,8 @@ describe('PaginationType narrowing', () => {
       selectable: ['id'],
       sortable: ['id'],
       defaultLimit: 5,
+      maxLimit: 50,
+      defaultSelect: ['id'],
     });
 
     type QP = z.infer<typeof lo.queryParamsSchema>;
@@ -985,6 +989,8 @@ describe('PaginationType narrowing', () => {
       selectable: ['id'],
       sortable: ['id'],
       defaultLimit: 5,
+      maxLimit: 50,
+      defaultSelect: ['id'],
     });
 
     type QP = z.infer<typeof cur.queryParamsSchema>;
@@ -994,6 +1000,7 @@ describe('PaginationType narrowing', () => {
     const check: Payload = {
       type: 'CURSOR',
       cursorProperty: 'id',
+      limit: 5,
       cursor: 42,
     };
     expect(check.type).toBe('CURSOR');
@@ -1008,6 +1015,7 @@ describe('PaginationType narrowing', () => {
         selectable: ['id', 'status'],
         sortable: ['id'],
         defaultLimit: 10,
+        maxLimit: 100,
         defaultSelect: ['id', 'status'],
       });
     }
@@ -1030,6 +1038,7 @@ describe('PaginationType narrowing', () => {
         selectable: ['id', 'status'],
         sortable: ['id'],
         defaultLimit: 10,
+        maxLimit: 100,
         defaultSelect: ['id', 'status'],
       });
     }
@@ -1052,6 +1061,7 @@ describe('PaginationType narrowing', () => {
         selectable: ['id', 'status'],
         sortable: ['id'],
         defaultLimit: 10,
+        maxLimit: 100,
         defaultSelect: ['id', 'status'],
       });
     }

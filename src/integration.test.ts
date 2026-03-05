@@ -84,7 +84,7 @@ describe('Integration: LIMIT_OFFSET full flow', () => {
       defaultSortBy: [{ property: 'createdAt', direction: 'DESC' }],
       defaultLimit: 25,
       maxLimit: 100,
-      defaultSelect: ['*'],
+      defaultSelect: '*',
     });
   }
 
@@ -602,6 +602,7 @@ describe('Integration: CURSOR with date cursorProperty', () => {
         severity: { type: 'string', ops: ['$eq'] },
       },
       defaultLimit: 50,
+      maxLimit: 200,
       defaultSelect: ['id', 'name', 'occurredAt'],
     });
   }
@@ -735,7 +736,7 @@ describe('Integration: select() full flow', () => {
         'profile.avatar',
         'profile.settings.theme',
       ],
-      defaultSelect: ['*'],
+      defaultSelect: '*',
     });
 
     const parsed = queryParamsSchema.parse({});
@@ -800,7 +801,7 @@ describe('Integration: select() full flow', () => {
 /* ========================================================================= */
 
 describe('Integration: Edge cases', () => {
-  it('paginate with no optional config (minimal setup)', () => {
+  it('paginate with minimal config applies defaults', () => {
     const MinimalSchema = z.object({
       id: z.number(),
       name: z.string(),
@@ -809,22 +810,26 @@ describe('Integration: Edge cases', () => {
     const { queryParamsSchema, validatorSchema } = paginate({
       paginationType: 'LIMIT_OFFSET',
       dataSchema: MinimalSchema,
+      selectable: ['id', 'name'],
+      defaultLimit: 10,
+      maxLimit: 50,
+      defaultSelect: ['id', 'name'],
     });
 
     // Should parse with no params
     const parsed = queryParamsSchema.parse({});
 
-    expect(parsed.pagination.limit).toBeUndefined();
+    expect(parsed.pagination.limit).toBe(10);
     expect(parsed.pagination.sortBy).toBeUndefined();
-    expect(parsed.pagination.select).toBeUndefined();
+    expect(parsed.pagination.select).toEqual(['id', 'name']);
     expect(parsed.pagination.filters).toBeUndefined();
 
-    // Validator uses full schema when no select
+    // Validator uses defaultSelect projection
     const v = validatorSchema(parsed.pagination);
     expect(() =>
       v.parse({
         data: [{ id: 1, name: 'test' }],
-        pagination: { itemsPerPage: 0, totalItems: 1, currentPage: 1, totalPages: 1 },
+        pagination: { itemsPerPage: 10, totalItems: 1, currentPage: 1, totalPages: 1 },
       }),
     ).not.toThrow();
   });
@@ -833,6 +838,10 @@ describe('Integration: Edge cases', () => {
     const { queryParamsSchema } = paginate({
       paginationType: 'LIMIT_OFFSET',
       dataSchema: UserSchema,
+      selectable: ['id', 'username', 'age'],
+      defaultLimit: 20,
+      maxLimit: 100,
+      defaultSelect: ['id', 'username', 'age'],
       filterable: {
         age: { type: 'number', ops: ['$gte', '$lte', '$eq'] },
       },
@@ -851,6 +860,10 @@ describe('Integration: Edge cases', () => {
     const { queryParamsSchema } = paginate({
       paginationType: 'LIMIT_OFFSET',
       dataSchema: UserSchema,
+      selectable: ['id', 'username', 'role'],
+      defaultLimit: 20,
+      maxLimit: 100,
+      defaultSelect: ['id', 'username', 'role'],
       filterable: {
         role: { type: 'string', ops: ['$eq'] },
       },
@@ -870,6 +883,10 @@ describe('Integration: Edge cases', () => {
     const { queryParamsSchema } = paginate({
       paginationType: 'LIMIT_OFFSET',
       dataSchema: UserSchema,
+      selectable: ['id', 'username', 'role', 'age'],
+      defaultLimit: 20,
+      maxLimit: 100,
+      defaultSelect: ['id', 'username', 'role', 'age'],
       filterable: {
         role: { type: 'string', ops: ['$eq'] },
         age: { type: 'number', ops: ['$gte', '$lte'] },
@@ -906,6 +923,8 @@ describe('Integration: Edge cases', () => {
       paginationType: 'LIMIT_OFFSET',
       dataSchema: ArticleSchema,
       selectable: ['id', 'title'],
+      defaultLimit: 20,
+      maxLimit: 100,
       defaultSelect: ['id', 'title'],
     });
 
@@ -932,6 +951,7 @@ describe('Integration: Edge cases', () => {
       selectable: ['slug', 'title'],
       defaultSelect: ['slug', 'title'],
       defaultLimit: 10,
+      maxLimit: 50,
     });
 
     const parsed = queryParamsSchema.parse({
@@ -964,6 +984,10 @@ describe('Integration: Edge cases', () => {
     const { queryParamsSchema } = paginate({
       paginationType: 'LIMIT_OFFSET',
       dataSchema: UserSchema,
+      selectable: ['id', 'username', 'role'],
+      defaultLimit: 20,
+      maxLimit: 100,
+      defaultSelect: ['id', 'username', 'role'],
       filterable: {
         role: { type: 'string', ops: ['$eq', '$in'] },
       },
@@ -982,11 +1006,13 @@ describe('Integration: Edge cases', () => {
     const { queryParamsSchema, validatorSchema } = paginate({
       paginationType: 'LIMIT_OFFSET',
       dataSchema: ArticleSchema,
-      selectable: ['id', 'title'],
+      selectable: ['id', 'title', 'status'],
       sortable: ['id'],
       filterable: {
         status: { type: 'string', ops: ['$eq'] },
       },
+      defaultLimit: 20,
+      maxLimit: 100,
       defaultSelect: ['id', 'title'],
     });
 
