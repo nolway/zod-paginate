@@ -56,7 +56,7 @@ const { queryParamsSchema, validatorSchema, responseSchema } = paginate({
   defaultSortBy: [{ property: "createdAt", direction: "DESC" }],
   defaultLimit: 20,
   maxLimit: 100,
-  defaultSelect: ["*"],
+  defaultSelect: '*',
 });
 
 // Example querystring-like input
@@ -152,9 +152,9 @@ function createPaginatorUnion(): PaginateResult<typeof ModelSchema, "id" | "stat
 | `sortable?` | `string[]` (typed paths) | Allowlist of sortable fields. Enables `sortBy`. |
 | `filterable?` | object | Allowlist of filterable fields and allowed operators + field type. |
 | `defaultSortBy?` | `{ property, direction }[]` | Default sort if `sortBy` missing/empty. |
-| `defaultLimit?` | `number` | Default limit if `limit` missing. |
-| `maxLimit?` | `number` | Rejects `limit` values above this. |
-| `defaultSelect?` | `("*" \| field)[]` | Default select if `select` missing. `["*"]` expands to `selectable`. |
+| `defaultLimit` | `number` | **Required.** Default limit if `limit` missing. |
+| `maxLimit` | `number` | **Required.** Rejects `limit` values above this. |
+| `defaultSelect` | `field[] \| "*"` | **Required.** Default select if `select` missing. `"*"` expands to `selectable`. |
 | `cursorProperty` | (CURSOR only) typed path | The field used for cursor paging. Cursor type is inferred from `dataSchema` at that path and the query input cursor is coerced accordingly. |
 
 ## Query input shape
@@ -561,7 +561,7 @@ const { responseSchema } = paginate({
   paginationType: "LIMIT_OFFSET",
   dataSchema: ModelSchema,
   selectable: ["id", "status", "createdAt", "meta.score"],
-  defaultSelect: ["*"],
+  defaultSelect: '*',
   defaultLimit: 20,
   maxLimit: 100,
 });
@@ -631,7 +631,7 @@ function createSelector(): SelectResult<typeof ProductSchema, "id" | "name" | "p
 |---|---:|---|
 | `dataSchema` | `z.ZodObject` | Zod schema representing one data item. |
 | `selectable` | `string[]` (typed paths) | Allowlist of selectable fields (dot paths supported). |
-| `defaultSelect?` | `("*" \| field)[]` | Default select if `select` is missing. `["*"]` expands to `selectable`. |
+| `defaultSelect` | `field[] \| "*"` | **Required.** Default select if `select` is missing. `"*"` expands to `selectable`. |
 
 #### Example
 
