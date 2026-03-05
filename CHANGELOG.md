@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.3.2](https://github.com/nolway/zod-paginate/compare/v1.3.1...v1.3.2) (2026-03-05)
+
+
+### Bug Fixes
+
+* improve typing provided by querySchema ([94d2245](https://github.com/nolway/zod-paginate/commit/94d2245c4cb962866318cad4591fbb8ff9ba68a8))
+* use a root ZodObject instead of ZodRecord ([2df90fb](https://github.com/nolway/zod-paginate/commit/2df90fb8ba5e43ef182fa73e2183b7a92e9f028d))
+
+
+### Miscellaneous Chores
+
+* release 1.3.2 ([b4b306c](https://github.com/nolway/zod-paginate/commit/b4b306c27bd95451ef8042be83298651aed2a115))
+
 ## [1.3.1](https://github.com/nolway/zod-paginate/compare/v1.3.0...v1.3.1) (2026-03-05)
 
 
