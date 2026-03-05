@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.3.0](https://github.com/nolway/zod-paginate/compare/v1.2.1...v1.3.0) (2026-03-05)
+
+
+### Features
+
+* add fully typing inference between config properties ([8f3f73a](https://github.com/nolway/zod-paginate/commit/8f3f73aa44de7163321aab19a5d74c91b1b73206))
+
+
+### Miscellaneous Chores
+
+* release 1.3.0 ([c79c77d](https://github.com/nolway/zod-paginate/commit/c79c77d111e5bf295d63e218deac390318564e57))
+
 ## [1.2.1](https://github.com/nolway/zod-paginate/compare/v1.2.0...v1.2.1) (2026-02-26)
 
 
