@@ -820,15 +820,21 @@ describe('paginate', () => {
     ).not.toThrow();
   });
 
-  it('LIMIT_OFFSET responseSchema: rejects missing pagination fields', () => {
+  it('LIMIT_OFFSET responseSchema: accepts partial data fields', () => {
     const { responseSchema } = makeLimitOffset();
 
+    // Only id => valid (responseSchema uses partial data schema)
     expect(() =>
       responseSchema.parse({
-        data: [],
-        pagination: { itemsPerPage: 20 },
+        data: [{ id: 1 }],
+        pagination: {
+          itemsPerPage: 20,
+          totalItems: 1,
+          currentPage: 1,
+          totalPages: 1,
+        },
       }),
-    ).toThrow();
+    ).not.toThrow();
   });
 
   it('LIMIT_OFFSET responseSchema: accepts empty data array', () => {
@@ -847,18 +853,26 @@ describe('paginate', () => {
     ).not.toThrow();
   });
 
-  it('LIMIT_OFFSET responseSchema: is equivalent to validatorSchema() without args', () => {
+  it('LIMIT_OFFSET responseSchema: accepts full payload and partial payload', () => {
     const { responseSchema, validatorSchema } = makeLimitOffset();
 
-    const payload = {
+    const fullPayload = {
       data: [{ id: 1, status: 'ok', createdAt: new Date(), meta: { score: 5 } }],
       pagination: { itemsPerPage: 20, totalItems: 1, currentPage: 1, totalPages: 1 },
     };
 
-    const fromResponse = responseSchema.parse(payload);
-    const fromValidator = validatorSchema().parse(payload);
+    const partialPayload = {
+      data: [{ id: 1 }],
+      pagination: { itemsPerPage: 20, totalItems: 1, currentPage: 1, totalPages: 1 },
+    };
 
-    expect(fromResponse).toEqual(fromValidator);
+    // responseSchema accepts both full and partial
+    expect(() => responseSchema.parse(fullPayload)).not.toThrow();
+    expect(() => responseSchema.parse(partialPayload)).not.toThrow();
+
+    // validatorSchema() (default select "*") requires all fields
+    expect(() => validatorSchema().parse(fullPayload)).not.toThrow();
+    expect(() => validatorSchema().parse(partialPayload)).toThrow();
   });
 
   it('CURSOR responseSchema: validates a complete cursor response', () => {

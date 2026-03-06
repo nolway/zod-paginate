@@ -455,7 +455,14 @@ export function select<
     });
   };
 
-  const responseSchema = validatorSchema();
+  const allSelectablePaths = config.selectable.map((f) => `${f}`);
+  const responseSchema: z.ZodType<SelectResponse<TSchema, TSelectable[number]>> = z.object({
+    data: z.array(
+      allSelectablePaths.length > 0
+        ? projectDataSchema(config.dataSchema, allSelectablePaths).partial()
+        : config.dataSchema,
+    ),
+  });
 
   return { queryParamsSchema, validatorSchema, responseSchema };
 }

@@ -266,15 +266,22 @@ describe('select', () => {
     ).not.toThrow();
   });
 
-  it('responseSchema: rejects missing required fields', () => {
+  it('responseSchema: accepts partial fields (only a subset of selectable)', () => {
     const { responseSchema } = makeSelect();
 
-    // meta.score missing => invalid
+    // meta.score missing => valid (responseSchema is partial)
     expect(() =>
       responseSchema.parse({
         data: [{ id: 1, status: 'active' }],
       }),
-    ).toThrow();
+    ).not.toThrow();
+
+    // Only id => also valid
+    expect(() =>
+      responseSchema.parse({
+        data: [{ id: 1 }],
+      }),
+    ).not.toThrow();
   });
 
   it('responseSchema: accepts empty data array', () => {
@@ -283,7 +290,7 @@ describe('select', () => {
     expect(() => responseSchema.parse({ data: [] })).not.toThrow();
   });
 
-  it('responseSchema: is equivalent to validatorSchema() called without args', () => {
+  it('responseSchema: accepts full payload that validatorSchema() also accepts', () => {
     const { responseSchema, validatorSchema } = makeSelect();
 
     const v = validatorSchema();
@@ -291,27 +298,47 @@ describe('select', () => {
       data: [{ id: 1, status: 'active', meta: { score: 42 } }],
     };
 
-    const fromResponse = responseSchema.parse(payload);
-    const fromValidator = v.parse(payload);
-
-    expect(fromResponse).toEqual(fromValidator);
+    // Both accept the same full payload
+    expect(() => responseSchema.parse(payload)).not.toThrow();
+    expect(() => v.parse(payload)).not.toThrow();
   });
 
-  it('responseSchema: uses partial defaultSelect when configured', () => {
+  it('responseSchema: accepts partial data that validatorSchema() rejects', () => {
+    const { responseSchema, validatorSchema } = makeSelect();
+
+    const v = validatorSchema();
+    const payload = {
+      data: [{ id: 1 }],
+    };
+
+    // responseSchema is partial => accepts
+    expect(() => responseSchema.parse(payload)).not.toThrow();
+    // validatorSchema() uses defaultSelect "*" => requires all fields => rejects
+    expect(() => v.parse(payload)).toThrow();
+  });
+
+  it('responseSchema: uses all selectable fields as partial regardless of defaultSelect', () => {
     const { responseSchema } = makeSelectWithPartialDefault();
 
-    // id + status present => valid (defaultSelect: ['id', 'status'])
+    // id + status present => valid
     expect(() =>
       responseSchema.parse({
         data: [{ id: 1, status: 'active' }],
       }),
     ).not.toThrow();
 
-    // status missing => invalid
+    // only id => valid (responseSchema is partial)
     expect(() =>
       responseSchema.parse({
         data: [{ id: 1 }],
       }),
-    ).toThrow();
+    ).not.toThrow();
+
+    // meta.score alone => valid (it's a selectable field)
+    expect(() =>
+      responseSchema.parse({
+        data: [{ meta: { score: 42 } }],
+      }),
+    ).not.toThrow();
   });
 });

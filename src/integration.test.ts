@@ -787,12 +787,12 @@ describe('Integration: select() full flow', () => {
       }),
     ).not.toThrow();
 
-    // Missing email => invalid
+    // Missing email => valid (responseSchema is partial, accepts any subset of selectable fields)
     expect(() =>
       responseSchema.parse({
         data: [{ id: 1, username: 'alice' }],
       }),
-    ).toThrow();
+    ).not.toThrow();
   });
 });
 

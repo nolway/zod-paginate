@@ -1498,6 +1498,31 @@ export function paginate<
         }),
     );
 
+  const sortByResponseSchema = z
+    .array(
+      z.object({
+        property: z.string(),
+        direction: SortDirectionSchema,
+      }),
+    )
+    .optional()
+    .meta({ description: 'Applied sort order' });
+
+  const filterResponseSchema = WhereNodeSchema.optional().meta({
+    description: 'Applied filter AST',
+  });
+
+  const itemsPerPageSchema = z.number().meta({ description: 'Number of items returned per page' });
+  const totalItemsSchema = z
+    .number()
+    .meta({ description: 'Total number of items matching the query' });
+  const currentPageSchema = z.number().meta({ description: 'Current page number (1-based)' });
+  const totalPagesSchema = z.number().meta({ description: 'Total number of pages' });
+
+  const LIMIT_OFFSET_META_DESC = 'Pagination metadata for limit/offset mode';
+  const CURSOR_META_DESC = 'Pagination metadata for cursor mode';
+  const CURSOR_VALUE_DESC = 'Cursor value pointing to the last item returned';
+
   const validatorSchema = (
     parsed?: PaginationPayload<TSchema>,
   ): z.ZodType<PaginationResponse<TSchema, TSelectable[number]>> => {
@@ -1511,60 +1536,73 @@ export function paginate<
           )
         : config.dataSchema;
 
-    const dataArraySchema = z.array(dataItemSchema);
-
     if (config.paginationType === 'LIMIT_OFFSET') {
       return z.object({
-        data: dataArraySchema,
+        data: z.array(dataItemSchema),
         pagination: z
           .object({
-            itemsPerPage: z.number().meta({ description: 'Number of items returned per page' }),
-            totalItems: z
-              .number()
-              .meta({ description: 'Total number of items matching the query' }),
-            currentPage: z.number().meta({ description: 'Current page number (1-based)' }),
-            totalPages: z.number().meta({ description: 'Total number of pages' }),
-            sortBy: z
-              .array(
-                z.object({
-                  property: z.string(),
-                  direction: SortDirectionSchema,
-                }),
-              )
-              .optional()
-              .meta({ description: 'Applied sort order' }),
-            filter: WhereNodeSchema.optional().meta({ description: 'Applied filter AST' }),
+            itemsPerPage: itemsPerPageSchema,
+            totalItems: totalItemsSchema,
+            currentPage: currentPageSchema,
+            totalPages: totalPagesSchema,
+            sortBy: sortByResponseSchema,
+            filter: filterResponseSchema,
           })
-          .meta({ description: 'Pagination metadata for limit/offset mode' }),
+          .meta({ description: LIMIT_OFFSET_META_DESC }),
       });
     }
 
     const cursorType = cursorSchemaFromProperty(config.dataSchema, config.cursorProperty);
-
     return z.object({
-      data: dataArraySchema,
+      data: z.array(dataItemSchema),
       pagination: z
         .object({
-          itemsPerPage: z.number().meta({ description: 'Number of items returned per page' }),
-          cursor: cursorType.meta({
-            description: 'Cursor value pointing to the last item returned',
-          }),
-          sortBy: z
-            .array(
-              z.object({
-                property: z.string(),
-                direction: SortDirectionSchema,
-              }),
-            )
-            .optional()
-            .meta({ description: 'Applied sort order' }),
-          filter: WhereNodeSchema.optional().meta({ description: 'Applied filter AST' }),
+          itemsPerPage: itemsPerPageSchema,
+          cursor: cursorType.meta({ description: CURSOR_VALUE_DESC }),
+          sortBy: sortByResponseSchema,
+          filter: filterResponseSchema,
         })
-        .meta({ description: 'Pagination metadata for cursor mode' }),
+        .meta({ description: CURSOR_META_DESC }),
     });
   };
 
-  const responseSchema = validatorSchema();
+  const allSelectablePaths = (config.selectable ?? []).map((f) => `${f}`);
+  const partialDataItemSchema =
+    allSelectablePaths.length > 0
+      ? projectDataSchema(config.dataSchema, allSelectablePaths).partial()
+      : config.dataSchema;
+
+  const responseSchema: z.ZodType<PaginationResponse<TSchema, TSelectable[number]>> =
+    ((): z.ZodType<PaginationResponse<TSchema, TSelectable[number]>> => {
+      if (config.paginationType === 'LIMIT_OFFSET') {
+        return z.object({
+          data: z.array(partialDataItemSchema),
+          pagination: z
+            .object({
+              itemsPerPage: itemsPerPageSchema,
+              totalItems: totalItemsSchema,
+              currentPage: currentPageSchema,
+              totalPages: totalPagesSchema,
+              sortBy: sortByResponseSchema,
+              filter: filterResponseSchema,
+            })
+            .meta({ description: LIMIT_OFFSET_META_DESC }),
+        });
+      }
+
+      const cursorType = cursorSchemaFromProperty(config.dataSchema, config.cursorProperty);
+      return z.object({
+        data: z.array(partialDataItemSchema),
+        pagination: z
+          .object({
+            itemsPerPage: itemsPerPageSchema,
+            cursor: cursorType.meta({ description: CURSOR_VALUE_DESC }),
+            sortBy: sortByResponseSchema,
+            filter: filterResponseSchema,
+          })
+          .meta({ description: CURSOR_META_DESC }),
+      });
+    })();
 
   return { queryParamsSchema, validatorSchema, responseSchema };
 }
