@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.3.3](https://github.com/nolway/zod-paginate/compare/v1.3.2...v1.3.3) (2026-03-06)
+
+
+### Bug Fixes
+
+* reponseSchema is a partial selectable ([c6a62b5](https://github.com/nolway/zod-paginate/commit/c6a62b564f3831c1fe7144927e6d8ac7b05e0dfe))
+
 ## [1.3.2](https://github.com/nolway/zod-paginate/compare/v1.3.1...v1.3.2) (2026-03-05)
 
 
