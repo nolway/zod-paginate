@@ -217,7 +217,7 @@ export const ConditionSchema = z
     }),
   ])
   .meta({
-    openapi: { ref: 'FilterCondition' },
+    id: 'FilterCondition',
     description: 'A single filter condition with operator, optional negation, and value',
   });
 
@@ -270,7 +270,7 @@ const WhereNodeSchema: z.ZodType<WhereNode> = z
     ]),
   )
   .meta({
-    openapi: { ref: 'WhereNode' },
+    id: 'WhereNode',
     description:
       'Recursive filter AST node: a single filter condition, or an AND/OR group of nodes',
   });
@@ -1201,26 +1201,20 @@ export function paginate<
       .optional()
       .meta({
         description: `Maximum number of items to return per page (default: ${String(config.defaultLimit)}, max: ${String(config.maxLimit)})`,
-        openapi: { example: String(config.defaultLimit) },
+        example: String(config.defaultLimit),
       }),
   };
 
   if (config.paginationType === 'LIMIT_OFFSET') {
-    rootShape.page = z
-      .string()
-      .optional()
-      .meta({
-        description: 'Page number (1-based)',
-        openapi: { example: '1' },
-      });
+    rootShape.page = z.string().optional().meta({
+      description: 'Page number (1-based)',
+      example: '1',
+    });
   } else {
-    rootShape.cursor = z
-      .string()
-      .optional()
-      .meta({
-        description: 'Cursor value for cursor-based pagination',
-        openapi: { example: '42' },
-      });
+    rootShape.cursor = z.string().optional().meta({
+      description: 'Cursor value for cursor-based pagination',
+      example: '42',
+    });
   }
 
   if (config.sortable && config.sortable.length > 0) {
@@ -1233,7 +1227,7 @@ export function paginate<
       .optional()
       .meta({
         description: `Sort by field and direction. Format: "field:ASC" or "field:DESC". Allowed fields: ${config.sortable.join(', ')}. Default: ${defaultSortDesc}`,
-        openapi: { example: `${String(config.sortable[0])}:ASC` },
+        example: `${String(config.sortable[0])}:ASC`,
       });
   }
 
@@ -1245,7 +1239,7 @@ export function paginate<
       .optional()
       .meta({
         description: `Comma-separated list of fields to return. Use "*" for all. Allowed fields: ${config.selectable.join(', ')}. Default: ${defaultSelectDesc}`,
-        openapi: { example: config.selectable.join(',') },
+        example: config.selectable.join(','),
       });
   }
 
