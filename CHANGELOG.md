@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.3.4](https://github.com/nolway/zod-paginate/compare/v1.3.3...v1.3.4) (2026-03-12)
+
+
+### Bug Fixes
+
+* repair openapi metadata ([6782843](https://github.com/nolway/zod-paginate/commit/6782843265bb064a27d465926fe7efe40d26a560))
+
 ## [1.3.3](https://github.com/nolway/zod-paginate/compare/v1.3.2...v1.3.3) (2026-03-06)
 
 
