@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.4.0](https://github.com/nolway/zod-paginate/compare/v1.3.4...v1.4.0) (2026-03-31)
+
+
+### Features
+
+* add extra shape on query params ([8b68d8b](https://github.com/nolway/zod-paginate/commit/8b68d8bf5deb5875f1f22ba7caa14c32927e94b6))
+
+
+### Miscellaneous Chores
+
+* release 1.4.0 ([9171657](https://github.com/nolway/zod-paginate/commit/917165746ad3bfc088e05fd1f7dae3a246de61a4))
+
 ## [1.3.4](https://github.com/nolway/zod-paginate/compare/v1.3.3...v1.3.4) (2026-03-12)
 
 
