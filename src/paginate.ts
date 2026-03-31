@@ -884,6 +884,57 @@ export type PaginationResponse<
     ? CursorPaginationResponse<TSchema, TSelect>
     : never;
 
+/* ---------------------------------- */
+/* Response schema shapes (ZodObject)  */
+/* ---------------------------------- */
+
+/**
+ * Identity mapped type: converts an interface into a type alias with implicit
+ * index signatures. Zod 4's ZodObject requires `Shape extends $ZodShape`
+ * (a string-indexed record), which interfaces don't satisfy. Plain `type`
+ * aliases would work but violate `consistent-type-definitions`. A mapped type
+ * gives us both: ESLint-clean interfaces + implicit index signatures for Zod.
+ */
+type ZodShape<T> = { [K in keyof T]: T[K] };
+
+interface LimitOffsetPaginationMetaSchemaShapeDef {
+  itemsPerPage: z.ZodNumber;
+  totalItems: z.ZodNumber;
+  currentPage: z.ZodNumber;
+  totalPages: z.ZodNumber;
+  sortBy: z.ZodOptional<z.ZodArray<z.ZodObject<z.ZodRawShape>>>;
+  filter: z.ZodOptional<z.ZodType<WhereNode>>;
+}
+export type LimitOffsetPaginationMetaSchemaShape =
+  ZodShape<LimitOffsetPaginationMetaSchemaShapeDef>;
+
+interface CursorPaginationMetaSchemaShapeDef {
+  itemsPerPage: z.ZodNumber;
+  cursor: z.ZodType<number | string | Date>;
+  sortBy: z.ZodOptional<z.ZodArray<z.ZodObject<z.ZodRawShape>>>;
+  filter: z.ZodOptional<z.ZodType<WhereNode>>;
+}
+export type CursorPaginationMetaSchemaShape = ZodShape<CursorPaginationMetaSchemaShapeDef>;
+
+interface LimitOffsetResponseSchemaShapeDef {
+  data: z.ZodArray<z.ZodObject<z.ZodRawShape>>;
+  pagination: z.ZodObject<LimitOffsetPaginationMetaSchemaShape>;
+}
+export type LimitOffsetResponseSchemaShape = ZodShape<LimitOffsetResponseSchemaShapeDef>;
+
+interface CursorResponseSchemaShapeDef {
+  data: z.ZodArray<z.ZodObject<z.ZodRawShape>>;
+  pagination: z.ZodObject<CursorPaginationMetaSchemaShape>;
+}
+export type CursorResponseSchemaShape = ZodShape<CursorResponseSchemaShapeDef>;
+
+export type PaginationResponseSchemaShape<TType extends PaginationType> =
+  TType extends 'LIMIT_OFFSET'
+    ? LimitOffsetResponseSchemaShape
+    : TType extends 'CURSOR'
+      ? CursorResponseSchemaShape
+      : LimitOffsetResponseSchemaShape | CursorResponseSchemaShape;
+
 /**
  * Result type returned by `paginate()`. Use this instead of
  * `ReturnType<typeof paginate>` to preserve the generic `TSchema`.
@@ -898,11 +949,16 @@ export interface PaginateResult<
   TSelectable extends AllowedPath<TSchema> = AllowedPath<TSchema>,
   TType extends PaginationType = PaginationType,
 > {
-  queryParamsSchema: z.ZodType<PaginationQueryParams<TSchema, TType>>;
+  queryParamsSchema: {
+    (): z.ZodType<PaginationQueryParams<TSchema, TType>>;
+    <TExtraShape extends z.ZodRawShape>(
+      extraShape: TExtraShape,
+    ): z.ZodType<PaginationQueryParams<TSchema, TType> & z.infer<z.ZodObject<TExtraShape>>>;
+  };
   validatorSchema: (
     parsed?: PaginationPayload<TSchema>,
   ) => z.ZodType<PaginationResponse<TSchema, TSelectable, TType>>;
-  responseSchema: z.ZodType<PaginationResponse<TSchema, TSelectable, TType>>;
+  responseSchema: z.ZodObject<PaginationResponseSchemaShape<TType>>;
 }
 
 function callMethodIfReturnsZod(obj: unknown, methodName: string): z.ZodType | undefined {
@@ -1049,6 +1105,65 @@ function coerceCursorFromProperty<TSchema extends DataSchema>(
   }
 
   throw new Error(`cursorProperty "${cursorProperty}" must be a string|number|date`);
+}
+
+/* ---------------------------------- */
+/* Response schema builders            */
+/* ---------------------------------- */
+
+interface LimitOffsetResponseSchemaParts {
+  itemsPerPage: z.ZodNumber;
+  totalItems: z.ZodNumber;
+  currentPage: z.ZodNumber;
+  totalPages: z.ZodNumber;
+  sortBy: z.ZodOptional<z.ZodArray<z.ZodObject<z.ZodRawShape>>>;
+  filter: z.ZodOptional<z.ZodType<WhereNode>>;
+  metaDescription: string;
+}
+
+function buildLimitOffsetResponseSchema(
+  dataItemSchema: z.ZodObject<z.ZodRawShape>,
+  parts: LimitOffsetResponseSchemaParts,
+): z.ZodObject<LimitOffsetResponseSchemaShape> {
+  return z.object({
+    data: z.array(dataItemSchema),
+    pagination: z
+      .object({
+        itemsPerPage: parts.itemsPerPage,
+        totalItems: parts.totalItems,
+        currentPage: parts.currentPage,
+        totalPages: parts.totalPages,
+        sortBy: parts.sortBy,
+        filter: parts.filter,
+      })
+      .meta({ description: parts.metaDescription }),
+  });
+}
+
+interface CursorResponseSchemaParts {
+  itemsPerPage: z.ZodNumber;
+  cursor: z.ZodType<number | string | Date>;
+  sortBy: z.ZodOptional<z.ZodArray<z.ZodObject<z.ZodRawShape>>>;
+  filter: z.ZodOptional<z.ZodType<WhereNode>>;
+  metaDescription: string;
+  cursorValueDescription: string;
+}
+
+function buildCursorResponseSchema(
+  dataItemSchema: z.ZodObject<z.ZodRawShape>,
+  parts: CursorResponseSchemaParts,
+): z.ZodObject<CursorResponseSchemaShape> {
+  return z.object({
+    data: z.array(dataItemSchema),
+    pagination: z
+      .object({
+        itemsPerPage: parts.itemsPerPage,
+        cursor: parts.cursor.meta({ description: parts.cursorValueDescription }),
+        sortBy: parts.sortBy,
+        filter: parts.filter,
+      })
+      .meta({ description: parts.metaDescription }),
+  });
 }
 
 /* ---------------------------------- */
@@ -1243,7 +1358,7 @@ export function paginate<
       });
   }
 
-  const queryParamsSchema: z.ZodType<PaginationQueryParams<TSchema>> = z
+  const baseQueryParamsSchema: z.ZodType<PaginationQueryParams<TSchema>> = z
     .object(rootShape)
     .catchall(z.unknown())
     .transform(
@@ -1566,37 +1681,57 @@ export function paginate<
       ? projectDataSchema(config.dataSchema, allSelectablePaths).partial()
       : config.dataSchema;
 
-  const responseSchema: z.ZodType<PaginationResponse<TSchema, TSelectable[number]>> =
-    ((): z.ZodType<PaginationResponse<TSchema, TSelectable[number]>> => {
-      if (config.paginationType === 'LIMIT_OFFSET') {
-        return z.object({
-          data: z.array(partialDataItemSchema),
-          pagination: z
-            .object({
-              itemsPerPage: itemsPerPageSchema,
-              totalItems: totalItemsSchema,
-              currentPage: currentPageSchema,
-              totalPages: totalPagesSchema,
-              sortBy: sortByResponseSchema,
-              filter: filterResponseSchema,
-            })
-            .meta({ description: LIMIT_OFFSET_META_DESC }),
+  const responseSchema =
+    config.paginationType === 'LIMIT_OFFSET'
+      ? buildLimitOffsetResponseSchema(partialDataItemSchema, {
+          itemsPerPage: itemsPerPageSchema,
+          totalItems: totalItemsSchema,
+          currentPage: currentPageSchema,
+          totalPages: totalPagesSchema,
+          sortBy: sortByResponseSchema,
+          filter: filterResponseSchema,
+          metaDescription: LIMIT_OFFSET_META_DESC,
+        })
+      : buildCursorResponseSchema(partialDataItemSchema, {
+          itemsPerPage: itemsPerPageSchema,
+          cursor: cursorSchemaFromProperty(config.dataSchema, config.cursorProperty),
+          sortBy: sortByResponseSchema,
+          filter: filterResponseSchema,
+          metaDescription: CURSOR_META_DESC,
+          cursorValueDescription: CURSOR_VALUE_DESC,
         });
-      }
 
-      const cursorType = cursorSchemaFromProperty(config.dataSchema, config.cursorProperty);
-      return z.object({
-        data: z.array(partialDataItemSchema),
-        pagination: z
-          .object({
-            itemsPerPage: itemsPerPageSchema,
-            cursor: cursorType.meta({ description: CURSOR_VALUE_DESC }),
-            sortBy: sortByResponseSchema,
-            filter: filterResponseSchema,
-          })
-          .meta({ description: CURSOR_META_DESC }),
-      });
-    })();
+  function queryParamsSchema(): z.ZodType<PaginationQueryParams<TSchema>>;
+  function queryParamsSchema<TExtraShape extends z.ZodRawShape>(
+    extraShape: TExtraShape,
+  ): z.ZodType<PaginationQueryParams<TSchema> & z.infer<z.ZodObject<TExtraShape>>>;
+  function queryParamsSchema<TExtraShape extends z.ZodRawShape>(
+    extraShape?: TExtraShape,
+  ): z.ZodType {
+    if (!extraShape) return baseQueryParamsSchema;
+
+    const extraSchema = z.object(extraShape);
+    return z
+      .record(z.string(), z.unknown())
+      .superRefine((raw, ctx) => {
+        const pagResult = baseQueryParamsSchema.safeParse(raw);
+        if (!pagResult.success) {
+          for (const issue of pagResult.error.issues) {
+            ctx.addIssue({ code: 'custom', message: issue.message, path: issue.path });
+          }
+        }
+        const extraResult = extraSchema.safeParse(raw);
+        if (!extraResult.success) {
+          for (const issue of extraResult.error.issues) {
+            ctx.addIssue({ code: 'custom', message: issue.message, path: issue.path });
+          }
+        }
+      })
+      .transform((raw) => ({
+        ...baseQueryParamsSchema.parse(raw),
+        ...extraSchema.parse(raw),
+      }));
+  }
 
   return { queryParamsSchema, validatorSchema, responseSchema };
 }

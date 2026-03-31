@@ -61,7 +61,7 @@ const { queryParamsSchema, validatorSchema, responseSchema } = paginate({
 });
 
 // Example querystring-like input
-const parsed = queryParamsSchema.parse({
+const parsed = queryParamsSchema().parse({
   limit: "10",
   page: "2",
   sortBy: "createdAt:DESC",
@@ -96,9 +96,9 @@ const contextSchema = validatorSchema(parsed.pagination);
 
 Returns:
 
-- `queryParamsSchema`: Zod schema to parse query objects (strings / string arrays).
+- `queryParamsSchema(extraShape?)`: function returning a Zod schema to parse query objects (strings / string arrays). Call without arguments for the base schema, or pass an extra Zod shape to extend it with additional fields (see [Extending `queryParamsSchema`](#extending-queryparamsschema)).
 - `validatorSchema(parsed?)`: function returning a Zod schema to validate the response payload, projected based on the parsed `select`.
-- `responseSchema`: pre-built Zod schema for validating responses using `defaultSelect` (or all selectable fields). Equivalent to calling `validatorSchema()` with no arguments.
+- `responseSchema`: pre-built `ZodObject` for validating responses using `defaultSelect` (or all selectable fields). Equivalent to calling `validatorSchema()` with no arguments. Being a `ZodObject`, it exposes `.shape`, `.partial()`, etc. and `z.infer<typeof responseSchema>` correctly narrows both `data` keys and pagination metadata.
 
 ```ts
 // Overload 1 — LIMIT_OFFSET
@@ -158,9 +158,42 @@ function createPaginatorUnion(): PaginateResult<typeof ModelSchema, "id" | "stat
 | `defaultSelect` | `field[] \| "*"` | **Required.** Default select if `select` missing. `"*"` expands to `selectable`. |
 | `cursorProperty` | (CURSOR only) typed path | The field used for cursor paging. Cursor type is inferred from `dataSchema` at that path and the query input cursor is coerced accordingly. |
 
+### Extending `queryParamsSchema`
+
+`queryParamsSchema` accepts an optional Zod shape to add extra fields **as sibling properties** of `pagination` in the parsed output:
+
+```ts
+// Without extra — base schema
+const parsed = queryParamsSchema().parse({ limit: "10", page: "1" });
+// parsed.pagination → { type: "LIMIT_OFFSET", limit: 10, page: 1, … }
+
+// With extra — additional fields alongside pagination
+const parsed = queryParamsSchema({
+  search: z.string().optional(),
+  locale: z.enum(["en", "fr"]).default("en"),
+}).parse({ limit: "10", search: "alice", locale: "fr" });
+// parsed.pagination → { type: "LIMIT_OFFSET", limit: 10, … }
+// parsed.search     → "alice"
+// parsed.locale     → "fr"
+```
+
+Extra fields are validated together with pagination — errors from both sides are collected in a single `ZodError`.
+
+This also works with `select()`:
+
+```ts
+const { queryParamsSchema } = select({ … });
+const parsed = queryParamsSchema({ search: z.string().optional() }).parse({
+  select: "id,name",
+  search: "widget",
+});
+// parsed.select → ["id", "name"]
+// parsed.search → "widget"
+```
+
 ## Query input shape
 
-`queryParamsSchema` accepts any record-like input:
+`queryParamsSchema()` accepts any record-like input:
 
 ```ts
 Record<string, unknown>
@@ -480,7 +513,7 @@ HTTP query:
 Parsing:
 
 ```ts
-const parsed = queryParamsSchema.parse({
+const parsed = queryParamsSchema().parse({
   limit: "20",
   page: "1",
   select: "id,status,createdAt",
@@ -517,7 +550,7 @@ const { queryParamsSchema } = paginate({
 Parsing:
 
 ```ts
-const parsed = queryParamsSchema.parse({ cursor: "123", limit: "10" });
+const parsed = queryParamsSchema().parse({ cursor: "123", limit: "10" });
 
 // parsed.pagination
 // {
@@ -534,7 +567,7 @@ const parsed = queryParamsSchema.parse({ cursor: "123", limit: "10" });
 Goal: `(status == active OR status == postponed) AND (id > 10)`
 
 ```ts
-const parsed = queryParamsSchema.parse({
+const parsed = queryParamsSchema().parse({
   "filter.status": ["$g:1:$eq:active", "$g:1:$or:$eq:postponed"],
   "filter.id": "$g:2:$gt:10",
 
@@ -583,7 +616,7 @@ type Response = z.infer<typeof responseSchema>;
 Or using `validatorSchema(parsed)` for request-aware projection:
 
 ```ts
-const parsed = queryParamsSchema.parse({ select: "id,status", limit: "10", page: "1" });
+const parsed = queryParamsSchema().parse({ select: "id,status", limit: "10", page: "1" });
 const contextSchema = validatorSchema(parsed.pagination);
 
 // contextSchema expects data items shaped like { id, status } only
@@ -612,9 +645,9 @@ export function select<
 
 Returns:
 
-- `queryParamsSchema`: Zod schema to parse `{ select: "id,name" }` into `{ select: ["id", "name"] }`.
+- `queryParamsSchema(extraShape?)`: function returning a Zod schema to parse `{ select: "id,name" }` into `{ select: ["id", "name"] }`. Call without arguments for the base schema, or pass an extra Zod shape to extend it (see [Extending `queryParamsSchema`](#extending-queryparamsschema)).
 - `validatorSchema(parsed?)`: function returning a Zod schema expecting `{ data: Array<ProjectedItem> }`.
-- `responseSchema`: pre-built Zod schema for validating responses using `defaultSelect` (or all selectable fields). `z.infer<typeof responseSchema>` narrows data keys to the configured `selectable` paths.
+- `responseSchema`: pre-built `ZodObject` for validating responses using `defaultSelect` (or all selectable fields). `z.infer<typeof responseSchema>` narrows data keys to the configured `selectable` paths.
 
 Use `SelectResult<TSchema, TSelectable>` instead of `ReturnType<typeof select>` for explicit return types:
 
@@ -657,11 +690,11 @@ const { queryParamsSchema, validatorSchema, responseSchema } = select({
 });
 
 // select=* expands to all selectable fields
-const parsed = queryParamsSchema.parse({ select: "*" });
+const parsed = queryParamsSchema().parse({ select: "*" });
 // parsed.select → ["id", "name", "price", "details.weight", "details.color"]
 
 // With specific fields
-const parsed2 = queryParamsSchema.parse({ select: "id,name,details.color" });
+const parsed2 = queryParamsSchema().parse({ select: "id,name,details.color" });
 // parsed2.select → ["id", "name", "details.color"]
 
 // Pre-built response validator (based on defaultSelect)
@@ -679,7 +712,7 @@ contextSchema.parse({
 });
 
 // Missing select → uses defaultSelect
-const parsed3 = queryParamsSchema.parse({});
+const parsed3 = queryParamsSchema().parse({});
 // parsed3.select → ["id", "name", "price"]
 ```
 

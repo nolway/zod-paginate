@@ -56,7 +56,7 @@ describe('paginate', () => {
   it('parses LIMIT_OFFSET pagination, converts limit/page strings to numbers', () => {
     const { queryParamsSchema } = makeLimitOffset();
 
-    const parsed = queryParamsSchema.parse({
+    const parsed = queryParamsSchema().parse({
       limit: '10',
       page: '2',
     });
@@ -71,7 +71,7 @@ describe('paginate', () => {
   it('applies defaultLimit when limit is missing', () => {
     const { queryParamsSchema } = makeLimitOffset();
 
-    const parsed = queryParamsSchema.parse({
+    const parsed = queryParamsSchema().parse({
       page: '1',
     });
 
@@ -86,7 +86,7 @@ describe('paginate', () => {
     const { queryParamsSchema } = makeLimitOffset();
 
     expect(() =>
-      queryParamsSchema.parse({
+      queryParamsSchema().parse({
         limit: '999',
         page: '1',
       }),
@@ -96,7 +96,7 @@ describe('paginate', () => {
   it('normalizes sortBy: string -> array, and parses SortItem', () => {
     const { queryParamsSchema } = makeLimitOffset();
 
-    const parsed = queryParamsSchema.parse({
+    const parsed = queryParamsSchema().parse({
       sortBy: 'createdAt:DESC',
     });
 
@@ -109,7 +109,7 @@ describe('paginate', () => {
   it('normalizes sortBy: string[] stays array and parses multiple items', () => {
     const { queryParamsSchema } = makeLimitOffset();
 
-    const parsed = queryParamsSchema.parse({
+    const parsed = queryParamsSchema().parse({
       sortBy: ['createdAt:DESC', 'id:ASC'],
     });
 
@@ -125,7 +125,7 @@ describe('paginate', () => {
   it('filters empty sortBy values (e.g. ?sortBy=)', () => {
     const { queryParamsSchema } = makeLimitOffset();
 
-    const parsed = queryParamsSchema.parse({
+    const parsed = queryParamsSchema().parse({
       sortBy: ['  ', 'createdAt:DESC'],
     });
 
@@ -138,7 +138,7 @@ describe('paginate', () => {
   it('sortBy with only empty values falls back to defaultSortBy', () => {
     const { queryParamsSchema } = makeLimitOffset();
 
-    const parsed = queryParamsSchema.parse({
+    const parsed = queryParamsSchema().parse({
       sortBy: ['   ', ' '],
     });
 
@@ -151,7 +151,7 @@ describe('paginate', () => {
   it('applies defaultSortBy when sortBy is missing', () => {
     const { queryParamsSchema } = makeLimitOffset();
 
-    const parsed = queryParamsSchema.parse({
+    const parsed = queryParamsSchema().parse({
       page: '1',
       limit: '10',
     });
@@ -165,7 +165,7 @@ describe('paginate', () => {
   it('parses select and enforces selectable allowlist', () => {
     const { queryParamsSchema } = makeLimitOffset();
 
-    const parsed = queryParamsSchema.parse({
+    const parsed = queryParamsSchema().parse({
       select: 'id,status',
     });
 
@@ -175,7 +175,7 @@ describe('paginate', () => {
     }
 
     expect(() =>
-      queryParamsSchema.parse({
+      queryParamsSchema().parse({
         select: 'id,unknownField',
       }),
     ).toThrow();
@@ -185,7 +185,7 @@ describe('paginate', () => {
     const { queryParamsSchema } = makeLimitOffset();
 
     // Missing select -> defaultSelect ["*"] -> expand to selectable list
-    const parsed = queryParamsSchema.parse({
+    const parsed = queryParamsSchema().parse({
       limit: '10',
       page: '1',
     });
@@ -196,7 +196,7 @@ describe('paginate', () => {
     }
 
     // Explicit "*"
-    const parsed2 = queryParamsSchema.parse({
+    const parsed2 = queryParamsSchema().parse({
       select: '*',
     });
 
@@ -209,7 +209,7 @@ describe('paginate', () => {
   it('normalizes filter.<field> string -> string[] and builds filters AST', () => {
     const { queryParamsSchema } = makeLimitOffset();
 
-    const parsed = queryParamsSchema.parse({
+    const parsed = queryParamsSchema().parse({
       'filter.status': '$eq:active',
       'filter.id': '$gt:10',
     });
@@ -221,7 +221,7 @@ describe('paginate', () => {
   it('supports $not as prefix: $not:$null', () => {
     const { queryParamsSchema } = makeLimitOffset();
 
-    const parsed = queryParamsSchema.parse({
+    const parsed = queryParamsSchema().parse({
       'filter.createdAt': '$not:$null',
     });
 
@@ -244,7 +244,7 @@ describe('paginate', () => {
     const { queryParamsSchema } = makeLimitOffset();
 
     expect(() =>
-      queryParamsSchema.parse({
+      queryParamsSchema().parse({
         'filter.unknown': '$eq:test',
       }),
     ).toThrow();
@@ -254,7 +254,7 @@ describe('paginate', () => {
     const { queryParamsSchema } = makeLimitOffset();
 
     expect(() =>
-      queryParamsSchema.parse({
+      queryParamsSchema().parse({
         'filter.status': '$gt:10',
       }),
     ).toThrow();
@@ -264,13 +264,13 @@ describe('paginate', () => {
     const { queryParamsSchema } = makeLimitOffset();
 
     expect(() =>
-      queryParamsSchema.parse({
+      queryParamsSchema().parse({
         'filter.createdAt': '$gt:123',
       }),
     ).toThrow();
 
     expect(() =>
-      queryParamsSchema.parse({
+      queryParamsSchema().parse({
         'filter.id': '$gt:2022-01-01',
       }),
     ).toThrow();
@@ -280,7 +280,7 @@ describe('paginate', () => {
     const { queryParamsSchema } = makeLimitOffset();
 
     expect(() =>
-      queryParamsSchema.parse({
+      queryParamsSchema().parse({
         'filter.createdAt': '$btw:2022-01-01,10',
       }),
     ).toThrow();
@@ -289,7 +289,7 @@ describe('paginate', () => {
   it('supports $btw for date fields when ISO bounds are valid', () => {
     const { queryParamsSchema } = makeLimitOffset();
 
-    const parsed = queryParamsSchema.parse({
+    const parsed = queryParamsSchema().parse({
       'filter.createdAt': '$btw:2022-01-01,2022-01-10',
     });
 
@@ -299,7 +299,7 @@ describe('paginate', () => {
   it('supports $in for number fields (value is array of strings in DSL)', () => {
     const { queryParamsSchema } = makeLimitOffset();
 
-    const parsed = queryParamsSchema.parse({
+    const parsed = queryParamsSchema().parse({
       'filter.id': '$in:1,2,3',
     });
 
@@ -316,7 +316,7 @@ describe('paginate', () => {
   it('supports groups via $g:<id> and group.<id>.* definitions', () => {
     const { queryParamsSchema } = makeLimitOffset();
 
-    const parsed = queryParamsSchema.parse({
+    const parsed = queryParamsSchema().parse({
       'filter.status': ['$g:1:$eq:active', '$g:1:$or:$eq:postponed'],
       'filter.createdAt': ['$g:2:$not:$null', '$g:2:$and:$btw:2022-01-01,2022-02-01'],
 
@@ -333,7 +333,7 @@ describe('paginate', () => {
     const { queryParamsSchema } = makeLimitOffset();
 
     expect(() =>
-      queryParamsSchema.parse({
+      queryParamsSchema().parse({
         'filter.status': '$eq:active',
         'group.0.parent': '1',
       }),
@@ -344,7 +344,7 @@ describe('paginate', () => {
     const { queryParamsSchema } = makeLimitOffset();
 
     expect(() =>
-      queryParamsSchema.parse({
+      queryParamsSchema().parse({
         cursor: 'abc',
       }),
     ).toThrow();
@@ -354,13 +354,13 @@ describe('paginate', () => {
     const { queryParamsSchema } = makeCursor();
 
     expect(() =>
-      queryParamsSchema.parse({
+      queryParamsSchema().parse({
         page: '1',
         cursor: '123',
       }),
     ).toThrow();
 
-    const parsed = queryParamsSchema.parse({
+    const parsed = queryParamsSchema().parse({
       cursor: '123',
       limit: '5',
     });
@@ -376,7 +376,7 @@ describe('paginate', () => {
   it('CURSOR pagination: applies defaultLimit when limit missing', () => {
     const { queryParamsSchema } = makeCursor();
 
-    const parsed = queryParamsSchema.parse({
+    const parsed = queryParamsSchema().parse({
       cursor: '123',
     });
 
@@ -390,7 +390,7 @@ describe('paginate', () => {
     const { queryParamsSchema } = makeLimitOffset();
 
     expect(() =>
-      queryParamsSchema.parse({
+      queryParamsSchema().parse({
         select: '',
       }),
     ).toThrow();
@@ -400,7 +400,7 @@ describe('paginate', () => {
     const { queryParamsSchema } = makeLimitOffset();
 
     expect(() =>
-      queryParamsSchema.parse({
+      queryParamsSchema().parse({
         sortBy: 'createdAt:DOWN',
       }),
     ).toThrow();
@@ -410,7 +410,7 @@ describe('paginate', () => {
     const { queryParamsSchema } = makeLimitOffset();
 
     expect(() =>
-      queryParamsSchema.parse({
+      queryParamsSchema().parse({
         'filter.status': '$wat:active',
       }),
     ).toThrow();
@@ -420,7 +420,7 @@ describe('paginate', () => {
     const { queryParamsSchema } = makeLimitOffset();
 
     expect(() =>
-      queryParamsSchema.parse({
+      queryParamsSchema().parse({
         'filter.status': ['$g:1:$or:$eq:active'],
       }),
     ).toThrow();
@@ -430,7 +430,7 @@ describe('paginate', () => {
     const { queryParamsSchema } = makeLimitOffset();
 
     expect(() =>
-      queryParamsSchema.parse({
+      queryParamsSchema().parse({
         'filter.status': '$g:1:$eq:active',
         'group.1.parent': '0',
         'group.1.join': '$and',
@@ -442,7 +442,7 @@ describe('paginate', () => {
     const { queryParamsSchema } = makeLimitOffset();
 
     expect(() =>
-      queryParamsSchema.parse({
+      queryParamsSchema().parse({
         'filter.status': '$g:1:$eq:active',
         'group.1.parent': '2',
         'group.2.parent': '1',
@@ -453,7 +453,7 @@ describe('paginate', () => {
   it('resolves sibling groups in numeric order (deterministic folding)', () => {
     const { queryParamsSchema } = makeLimitOffset();
 
-    const parsed = queryParamsSchema.parse({
+    const parsed = queryParamsSchema().parse({
       'filter.status': ['$g:2:$eq:active'],
       'filter.id': ['$g:10:$eq:1'],
 
@@ -471,7 +471,7 @@ describe('paginate', () => {
     const { queryParamsSchema } = makeLimitOffset();
 
     expect(() =>
-      queryParamsSchema.parse({
+      queryParamsSchema().parse({
         'filter.createdAt': '$btw:2022-01-01',
       }),
     ).toThrow();
@@ -481,7 +481,7 @@ describe('paginate', () => {
     const { queryParamsSchema } = makeLimitOffset();
 
     expect(() =>
-      queryParamsSchema.parse({
+      queryParamsSchema().parse({
         'filter.status': '$not:',
       }),
     ).toThrow();
@@ -490,7 +490,7 @@ describe('paginate', () => {
   it('supports nested group tree', () => {
     const { queryParamsSchema } = makeLimitOffset();
 
-    const parsed = queryParamsSchema.parse({
+    const parsed = queryParamsSchema().parse({
       // Group 1: status active
       'filter.status': '$g:1:$eq:active',
 
@@ -514,7 +514,7 @@ describe('paginate', () => {
     const { queryParamsSchema } = makeLimitOffset();
 
     expect(() =>
-      queryParamsSchema.parse({
+      queryParamsSchema().parse({
         'filter.status': '$g:abc:$eq:active',
       }),
     ).toThrow();
@@ -524,7 +524,7 @@ describe('paginate', () => {
     const { queryParamsSchema } = makeLimitOffset();
 
     expect(() =>
-      queryParamsSchema.parse({
+      queryParamsSchema().parse({
         'filter.status': '$g:1:$eq:active',
         'group.1.parent': '0',
         'group.1.join': '$xor',
@@ -540,7 +540,7 @@ describe('paginate', () => {
     const { queryParamsSchema, validatorSchema } = makeLimitOffset();
 
     // defaultSelect ["*"] should expand to selectable
-    const parsed = queryParamsSchema.parse({ page: '1', limit: '10' });
+    const parsed = queryParamsSchema().parse({ page: '1', limit: '10' });
 
     const v = validatorSchema(parsed.pagination);
 
@@ -587,7 +587,7 @@ describe('paginate', () => {
   it('validator (LIMIT_OFFSET): explicit select narrows the expected data shape', () => {
     const { queryParamsSchema, validatorSchema } = makeLimitOffset();
 
-    const parsed = queryParamsSchema.parse({
+    const parsed = queryParamsSchema().parse({
       select: 'id,status',
       page: '1',
       limit: '10',
@@ -633,7 +633,7 @@ describe('paginate', () => {
   it('validator (CURSOR): defaultSelect projects to defaultSelect + cursor type inferred from cursorProperty', () => {
     const { queryParamsSchema, validatorSchema } = makeCursor();
 
-    const parsed = queryParamsSchema.parse({
+    const parsed = queryParamsSchema().parse({
       cursor: '123',
     });
 
@@ -691,7 +691,7 @@ describe('paginate', () => {
   it('validator (CURSOR): explicit select changes expected item shape', () => {
     const { queryParamsSchema, validatorSchema } = makeCursor();
 
-    const parsed = queryParamsSchema.parse({
+    const parsed = queryParamsSchema().parse({
       cursor: '123',
       select: 'id,status,createdAt',
     });
@@ -734,7 +734,7 @@ describe('paginate', () => {
   it('CURSOR pagination: coerces numeric cursor string to number (helper example)', () => {
     const { queryParamsSchema } = makeCursor();
 
-    const parsed = queryParamsSchema.parse({
+    const parsed = queryParamsSchema().parse({
       cursor: '123', // querystring input is always string
     });
 
@@ -760,7 +760,7 @@ describe('paginate', () => {
   it('does not include pagination.filters when no filter.* is provided', () => {
     const { queryParamsSchema } = makeLimitOffset();
 
-    const parsed = queryParamsSchema.parse({
+    const parsed = queryParamsSchema().parse({
       limit: '10',
       page: '1',
     });
@@ -777,7 +777,7 @@ describe('paginate', () => {
     const { queryParamsSchema } = makeLimitOffset();
 
     expect(() =>
-      queryParamsSchema.parse({
+      queryParamsSchema().parse({
         // no filter.*
         'group.1.parent': '0',
         'group.1.join': '$and',
@@ -788,7 +788,7 @@ describe('paginate', () => {
   it('CURSOR: does not include pagination.filters when no filter.* is provided', () => {
     const { queryParamsSchema } = makeCursor();
 
-    const parsed = queryParamsSchema.parse({
+    const parsed = queryParamsSchema().parse({
       cursor: '123',
       limit: '5',
     });
@@ -982,7 +982,7 @@ describe('PaginationType narrowing', () => {
       defaultSelect: ['id'],
     });
 
-    type QP = z.infer<typeof lo.queryParamsSchema>;
+    type QP = z.infer<ReturnType<typeof lo.queryParamsSchema>>;
     type Payload = QP['pagination'];
 
     // Statically, page exists on the narrowed payload (no union)
@@ -1007,7 +1007,7 @@ describe('PaginationType narrowing', () => {
       defaultSelect: ['id'],
     });
 
-    type QP = z.infer<typeof cur.queryParamsSchema>;
+    type QP = z.infer<ReturnType<typeof cur.queryParamsSchema>>;
     type Payload = QP['pagination'];
 
     // Statically, cursorProperty exists on the narrowed payload (no union)

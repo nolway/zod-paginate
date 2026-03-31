@@ -91,7 +91,7 @@ describe('Integration: LIMIT_OFFSET full flow', () => {
   it('parses a complex query combining select, sort, filters, and pagination', () => {
     const { queryParamsSchema } = setup();
 
-    const parsed = queryParamsSchema.parse({
+    const parsed = queryParamsSchema().parse({
       limit: '15',
       page: '3',
       select: 'id,username,email,age',
@@ -120,7 +120,7 @@ describe('Integration: LIMIT_OFFSET full flow', () => {
   it('validates response shape after parsing with explicit select', () => {
     const { queryParamsSchema, validatorSchema } = setup();
 
-    const parsed = queryParamsSchema.parse({
+    const parsed = queryParamsSchema().parse({
       select: 'id,username,profile.bio',
       limit: '10',
       page: '1',
@@ -161,7 +161,7 @@ describe('Integration: LIMIT_OFFSET full flow', () => {
   it('validates response with deeply nested select projection', () => {
     const { queryParamsSchema, validatorSchema } = setup();
 
-    const parsed = queryParamsSchema.parse({
+    const parsed = queryParamsSchema().parse({
       select: 'id,profile.settings.theme',
       limit: '5',
       page: '1',
@@ -188,7 +188,7 @@ describe('Integration: LIMIT_OFFSET full flow', () => {
   it('filters with groups build correct AST structure', () => {
     const { queryParamsSchema } = setup();
 
-    const parsed = queryParamsSchema.parse({
+    const parsed = queryParamsSchema().parse({
       // Group 1: role = admin OR role = editor
       'filter.role': ['$g:1:$eq:admin', '$g:1:$or:$eq:editor'],
       // Group 2: age >= 18 AND age <= 65
@@ -212,7 +212,7 @@ describe('Integration: LIMIT_OFFSET full flow', () => {
   it('filters with $not operator negate conditions correctly', () => {
     const { queryParamsSchema } = setup();
 
-    const parsed = queryParamsSchema.parse({
+    const parsed = queryParamsSchema().parse({
       'filter.createdAt': '$not:$null',
       'filter.username': '$not:$ilike:test',
     });
@@ -232,7 +232,7 @@ describe('Integration: LIMIT_OFFSET full flow', () => {
   it('defaults are applied when optional params are omitted', () => {
     const { queryParamsSchema } = setup();
 
-    const parsed = queryParamsSchema.parse({});
+    const parsed = queryParamsSchema().parse({});
 
     if (parsed.pagination.type !== 'LIMIT_OFFSET') return;
 
@@ -256,7 +256,7 @@ describe('Integration: LIMIT_OFFSET full flow', () => {
   it('end-to-end: parse query → validate response with all features combined', () => {
     const { queryParamsSchema, validatorSchema } = setup();
 
-    const parsed = queryParamsSchema.parse({
+    const parsed = queryParamsSchema().parse({
       limit: '10',
       page: '1',
       select: 'id,username,age,role',
@@ -289,7 +289,7 @@ describe('Integration: LIMIT_OFFSET full flow', () => {
 
     // Invalid: limit exceeds maxLimit + unknown filter field + bad sort direction
     expect(() =>
-      queryParamsSchema.parse({
+      queryParamsSchema().parse({
         limit: '999',
         'filter.unknown': '$eq:test',
         sortBy: 'id:SIDEWAYS',
@@ -300,7 +300,7 @@ describe('Integration: LIMIT_OFFSET full flow', () => {
   it('handles $btw with date ranges and validates type consistency', () => {
     const { queryParamsSchema } = setup();
 
-    const parsed = queryParamsSchema.parse({
+    const parsed = queryParamsSchema().parse({
       'filter.createdAt': '$btw:2024-01-01,2024-12-31',
     });
 
@@ -310,7 +310,7 @@ describe('Integration: LIMIT_OFFSET full flow', () => {
 
     // Reject mixed types in $btw (number + date)
     expect(() =>
-      queryParamsSchema.parse({
+      queryParamsSchema().parse({
         'filter.createdAt': '$btw:2024-01-01,42',
       }),
     ).toThrow();
@@ -319,7 +319,7 @@ describe('Integration: LIMIT_OFFSET full flow', () => {
   it('handles $btw with number ranges', () => {
     const { queryParamsSchema } = setup();
 
-    const parsed = queryParamsSchema.parse({
+    const parsed = queryParamsSchema().parse({
       'filter.age': '$btw:18,99',
     });
 
@@ -331,7 +331,7 @@ describe('Integration: LIMIT_OFFSET full flow', () => {
   it('handles $sw (starts-with) and $ilike on string fields', () => {
     const { queryParamsSchema } = setup();
 
-    const parsed = queryParamsSchema.parse({
+    const parsed = queryParamsSchema().parse({
       'filter.username': ['$sw:al', '$or:$ilike:bob'],
     });
 
@@ -343,7 +343,7 @@ describe('Integration: LIMIT_OFFSET full flow', () => {
   it('handles $contains on string array fields', () => {
     const { queryParamsSchema } = setup();
 
-    const parsed = queryParamsSchema.parse({
+    const parsed = queryParamsSchema().parse({
       'filter.email': '$contains:example.com,test.org',
     });
 
@@ -356,7 +356,7 @@ describe('Integration: LIMIT_OFFSET full flow', () => {
     const { queryParamsSchema } = setup();
 
     // email is not in sortable: only the valid sort item is kept
-    const parsed = queryParamsSchema.parse({
+    const parsed = queryParamsSchema().parse({
       sortBy: ['createdAt:ASC', 'email:DESC'],
     });
 
@@ -365,7 +365,7 @@ describe('Integration: LIMIT_OFFSET full flow', () => {
     expect(parsed.pagination.sortBy).toEqual([{ property: 'createdAt', direction: 'ASC' }]);
 
     // If *all* sort items are unknown, sortBy resolves to undefined (no fallback to default)
-    const parsed2 = queryParamsSchema.parse({
+    const parsed2 = queryParamsSchema().parse({
       sortBy: 'email:DESC',
     });
 
@@ -413,7 +413,7 @@ describe('Integration: CURSOR full flow', () => {
   it('parses cursor-based query with all features', () => {
     const { queryParamsSchema } = setup();
 
-    const parsed = queryParamsSchema.parse({
+    const parsed = queryParamsSchema().parse({
       cursor: '42',
       limit: '10',
       select: 'id,title,status,author.name,stats.views',
@@ -444,7 +444,7 @@ describe('Integration: CURSOR full flow', () => {
   it('validates response shape with cursor pagination metadata', () => {
     const { queryParamsSchema, validatorSchema } = setup();
 
-    const parsed = queryParamsSchema.parse({
+    const parsed = queryParamsSchema().parse({
       cursor: '10',
       select: 'id,title,author.name',
     });
@@ -480,7 +480,7 @@ describe('Integration: CURSOR full flow', () => {
   it('applies defaults when no params are provided', () => {
     const { queryParamsSchema } = setup();
 
-    const parsed = queryParamsSchema.parse({});
+    const parsed = queryParamsSchema().parse({});
 
     if (parsed.pagination.type !== 'CURSOR') return;
 
@@ -494,7 +494,7 @@ describe('Integration: CURSOR full flow', () => {
     const { queryParamsSchema } = setup();
 
     expect(() =>
-      queryParamsSchema.parse({
+      queryParamsSchema().parse({
         page: '1',
       }),
     ).toThrow();
@@ -504,7 +504,7 @@ describe('Integration: CURSOR full flow', () => {
     const { queryParamsSchema } = setup();
 
     expect(() =>
-      queryParamsSchema.parse({
+      queryParamsSchema().parse({
         cursor: 'abc',
       }),
     ).toThrow();
@@ -513,7 +513,7 @@ describe('Integration: CURSOR full flow', () => {
   it('end-to-end: parse query → validate full response with nested select', () => {
     const { queryParamsSchema, validatorSchema } = setup();
 
-    const parsed = queryParamsSchema.parse({
+    const parsed = queryParamsSchema().parse({
       cursor: '100',
       limit: '5',
       select: 'id,title,stats.views,stats.likes,author.name',
@@ -558,7 +558,7 @@ describe('Integration: CURSOR full flow', () => {
   it('handles complex grouped filters in cursor mode', () => {
     const { queryParamsSchema } = setup();
 
-    const parsed = queryParamsSchema.parse({
+    const parsed = queryParamsSchema().parse({
       cursor: '50',
       // Group 1: status published OR featured
       'filter.status': ['$g:1:$eq:published', '$g:1:$or:$eq:featured'],
@@ -610,7 +610,7 @@ describe('Integration: CURSOR with date cursorProperty', () => {
   it('coerces ISO date cursor string correctly', () => {
     const { queryParamsSchema } = setup();
 
-    const parsed = queryParamsSchema.parse({
+    const parsed = queryParamsSchema().parse({
       cursor: '2025-06-15T12:00:00Z',
       limit: '10',
     });
@@ -625,7 +625,7 @@ describe('Integration: CURSOR with date cursorProperty', () => {
     const { queryParamsSchema } = setup();
 
     expect(() =>
-      queryParamsSchema.parse({
+      queryParamsSchema().parse({
         cursor: 'not-a-date',
       }),
     ).toThrow();
@@ -634,7 +634,7 @@ describe('Integration: CURSOR with date cursorProperty', () => {
   it('validates response cursor type matches date expectation', () => {
     const { queryParamsSchema, validatorSchema } = setup();
 
-    const parsed = queryParamsSchema.parse({
+    const parsed = queryParamsSchema().parse({
       cursor: '2025-01-01T00:00:00Z',
     });
 
@@ -684,7 +684,7 @@ describe('Integration: select() full flow', () => {
   it('parses select and validates response in one flow', () => {
     const { queryParamsSchema, validatorSchema } = setup();
 
-    const parsed = queryParamsSchema.parse({ select: 'id,username,profile.settings.theme' });
+    const parsed = queryParamsSchema().parse({ select: 'id,username,profile.settings.theme' });
     const v = validatorSchema(parsed);
 
     expect(() =>
@@ -704,7 +704,7 @@ describe('Integration: select() full flow', () => {
   it('uses defaultSelect when no select provided and validates accordingly', () => {
     const { queryParamsSchema, validatorSchema } = setup();
 
-    const parsed = queryParamsSchema.parse({});
+    const parsed = queryParamsSchema().parse({});
     expect(parsed.select).toEqual(['id', 'username', 'email']);
 
     const v = validatorSchema(parsed);
@@ -739,7 +739,7 @@ describe('Integration: select() full flow', () => {
       defaultSelect: '*',
     });
 
-    const parsed = queryParamsSchema.parse({});
+    const parsed = queryParamsSchema().parse({});
     expect(parsed.select).toEqual([
       'id',
       'username',
@@ -771,7 +771,7 @@ describe('Integration: select() full flow', () => {
 
   it('validates empty array is always valid', () => {
     const { queryParamsSchema, validatorSchema } = setup();
-    const parsed = queryParamsSchema.parse({});
+    const parsed = queryParamsSchema().parse({});
     const v = validatorSchema(parsed);
 
     expect(() => v.parse({ data: [] })).not.toThrow();
@@ -817,7 +817,7 @@ describe('Integration: Edge cases', () => {
     });
 
     // Should parse with no params
-    const parsed = queryParamsSchema.parse({});
+    const parsed = queryParamsSchema().parse({});
 
     expect(parsed.pagination.limit).toBe(10);
     expect(parsed.pagination.sortBy).toBeUndefined();
@@ -847,7 +847,7 @@ describe('Integration: Edge cases', () => {
       },
     });
 
-    const parsed = queryParamsSchema.parse({
+    const parsed = queryParamsSchema().parse({
       'filter.age': ['$gte:18', '$and:$lte:65'],
     });
 
@@ -870,7 +870,7 @@ describe('Integration: Edge cases', () => {
     });
 
     // Plain value without $op: prefix should be treated as $eq
-    const parsed = queryParamsSchema.parse({
+    const parsed = queryParamsSchema().parse({
       'filter.role': 'admin',
     });
 
@@ -894,7 +894,7 @@ describe('Integration: Edge cases', () => {
       },
     });
 
-    const parsed = queryParamsSchema.parse({
+    const parsed = queryParamsSchema().parse({
       // Group 1: role = admin
       'filter.role': '$g:1:$eq:admin',
       // Group 2: age 18..65 (child of group 1)
@@ -954,7 +954,7 @@ describe('Integration: Edge cases', () => {
       maxLimit: 50,
     });
 
-    const parsed = queryParamsSchema.parse({
+    const parsed = queryParamsSchema().parse({
       cursor: 'my-article-slug',
     });
 
@@ -994,7 +994,7 @@ describe('Integration: Edge cases', () => {
     });
 
     // Simulates ?filter.role[]=$eq:admin&filter.role[]=$or:$eq:editor
-    const parsed = queryParamsSchema.parse({
+    const parsed = queryParamsSchema().parse({
       'filter.role': ['$eq:admin', '$or:$eq:editor'],
     });
 
@@ -1016,7 +1016,7 @@ describe('Integration: Edge cases', () => {
       defaultSelect: ['id', 'title'],
     });
 
-    const parsed = queryParamsSchema.parse({
+    const parsed = queryParamsSchema().parse({
       sortBy: 'id:ASC',
       'filter.status': '$eq:published',
     });
@@ -1091,7 +1091,7 @@ describe('OpenAPI compatibility: queryParamsSchema exposes named properties', ()
       defaultSelect: '*',
     });
 
-    const shape = unwrapRootZodObject(queryParamsSchema);
+    const shape = unwrapRootZodObject(queryParamsSchema());
     expect(shape).toBeDefined();
 
     const keys = Object.keys(shape ?? {});
@@ -1114,7 +1114,7 @@ describe('OpenAPI compatibility: queryParamsSchema exposes named properties', ()
       defaultSelect: ['id', 'title'],
     });
 
-    const shape = unwrapRootZodObject(queryParamsSchema);
+    const shape = unwrapRootZodObject(queryParamsSchema());
     expect(shape).toBeDefined();
 
     const keys = Object.keys(shape ?? {});
@@ -1134,7 +1134,7 @@ describe('OpenAPI compatibility: queryParamsSchema exposes named properties', ()
       defaultSelect: '*',
     });
 
-    const shape = unwrapRootZodObject(queryParamsSchema);
+    const shape = unwrapRootZodObject(queryParamsSchema());
     expect(shape).toBeDefined();
 
     const keys = Object.keys(shape ?? {});
@@ -1151,10 +1151,103 @@ describe('OpenAPI compatibility: queryParamsSchema exposes named properties', ()
       defaultSelect: ['id'],
     });
 
-    const shape = unwrapRootZodObject(queryParamsSchema);
+    const shape = unwrapRootZodObject(queryParamsSchema());
     expect(shape).toBeDefined();
 
     const keys = Object.keys(shape ?? {});
     expect(keys).toContain('select');
+  });
+});
+
+/* ========================================================================= */
+/*  queryParamsSchema with extra shape                                       */
+/* ========================================================================= */
+
+describe('Integration: queryParamsSchema with extra shape', () => {
+  function setup(): ReturnType<typeof paginate> {
+    return paginate({
+      paginationType: 'LIMIT_OFFSET',
+      dataSchema: UserSchema,
+      selectable: ['id', 'username', 'email'],
+      sortable: ['id'],
+      filterable: {
+        username: { type: 'string', ops: ['$eq'] },
+      },
+      defaultLimit: 10,
+      maxLimit: 50,
+      defaultSelect: '*',
+    });
+  }
+
+  it('parses extra fields alongside pagination', () => {
+    const { queryParamsSchema } = setup();
+
+    const extended = queryParamsSchema({
+      search: z.string().optional(),
+      locale: z.enum(['en', 'fr']).default('en'),
+    });
+
+    const parsed = extended.parse({
+      limit: '5',
+      page: '2',
+      search: 'alice',
+      locale: 'fr',
+    });
+
+    expect(parsed.pagination.type).toBe('LIMIT_OFFSET');
+    if (parsed.pagination.type !== 'LIMIT_OFFSET') return;
+    expect(parsed.pagination.limit).toBe(5);
+    expect(parsed.pagination.page).toBe(2);
+    expect(parsed.search).toBe('alice');
+    expect(parsed.locale).toBe('fr');
+  });
+
+  it('applies defaults for extra fields when omitted', () => {
+    const { queryParamsSchema } = setup();
+
+    const extended = queryParamsSchema({
+      search: z.string().optional(),
+      locale: z.enum(['en', 'fr']).default('en'),
+    });
+
+    const parsed = extended.parse({});
+
+    expect(parsed.pagination).toBeDefined();
+    expect(parsed.search).toBeUndefined();
+    expect(parsed.locale).toBe('en');
+  });
+
+  it('collects errors from both pagination and extra fields', () => {
+    const { queryParamsSchema } = setup();
+
+    const extended = queryParamsSchema({
+      search: z.string().min(3),
+    });
+
+    // limit exceeds maxLimit AND search too short
+    expect(() =>
+      extended.parse({
+        limit: '999',
+        search: 'ab',
+      }),
+    ).toThrow();
+  });
+
+  it('preserves pagination validation (filter, sort) with extra fields', () => {
+    const { queryParamsSchema } = setup();
+
+    const extended = queryParamsSchema({
+      search: z.string().optional(),
+    });
+
+    const parsed = extended.parse({
+      sortBy: 'id:ASC',
+      'filter.username': '$eq:alice',
+      search: 'test',
+    });
+
+    expect(parsed.pagination.sortBy).toEqual([{ property: 'id', direction: 'ASC' }]);
+    expect(parsed.pagination.filters).toBeDefined();
+    expect(parsed.search).toBe('test');
   });
 });

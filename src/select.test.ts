@@ -37,7 +37,7 @@ describe('select', () => {
   it('parses select into typed array', () => {
     const { queryParamsSchema } = makeSelect();
 
-    const parsed = queryParamsSchema.parse({ select: 'id,status' });
+    const parsed = queryParamsSchema().parse({ select: 'id,status' });
 
     expect(parsed.select).toEqual(['id', 'status']);
   });
@@ -45,7 +45,7 @@ describe('select', () => {
   it('trims whitespace and ignores empty segments', () => {
     const { queryParamsSchema } = makeSelect();
 
-    const parsed = queryParamsSchema.parse({ select: ' id , status , ' });
+    const parsed = queryParamsSchema().parse({ select: ' id , status , ' });
 
     expect(parsed.select).toEqual(['id', 'status']);
   });
@@ -53,7 +53,7 @@ describe('select', () => {
   it('supports nested paths (dot notation)', () => {
     const { queryParamsSchema } = makeSelect();
 
-    const parsed = queryParamsSchema.parse({ select: 'id,meta.score' });
+    const parsed = queryParamsSchema().parse({ select: 'id,meta.score' });
 
     expect(parsed.select).toEqual(['id', 'meta.score']);
   });
@@ -61,7 +61,7 @@ describe('select', () => {
   it('expands "*" to all selectable fields', () => {
     const { queryParamsSchema } = makeSelect();
 
-    const parsed = queryParamsSchema.parse({ select: '*' });
+    const parsed = queryParamsSchema().parse({ select: '*' });
 
     expect(parsed.select).toEqual(['id', 'status', 'meta.score']);
   });
@@ -69,7 +69,7 @@ describe('select', () => {
   it('falls back to defaultSelect when select is missing', () => {
     const { queryParamsSchema } = makeSelect();
 
-    const parsed = queryParamsSchema.parse({});
+    const parsed = queryParamsSchema().parse({});
 
     // defaultSelect: ["*"] expands to full selectable
     expect(parsed.select).toEqual(['id', 'status', 'meta.score']);
@@ -78,7 +78,7 @@ describe('select', () => {
   it('falls back to partial defaultSelect when select is missing', () => {
     const { queryParamsSchema } = makeSelectWithPartialDefault();
 
-    const parsed = queryParamsSchema.parse({});
+    const parsed = queryParamsSchema().parse({});
 
     expect(parsed.select).toEqual(['id', 'status']);
   });
@@ -90,20 +90,20 @@ describe('select', () => {
   it('rejects empty select (select=)', () => {
     const { queryParamsSchema } = makeSelect();
 
-    expect(() => queryParamsSchema.parse({ select: '' })).toThrow();
+    expect(() => queryParamsSchema().parse({ select: '' })).toThrow();
   });
 
   it('rejects unknown fields not in selectable allowlist', () => {
     const { queryParamsSchema } = makeSelect();
 
-    expect(() => queryParamsSchema.parse({ select: 'id,unknownField' })).toThrow();
+    expect(() => queryParamsSchema().parse({ select: 'id,unknownField' })).toThrow();
   });
 
   it('rejects non-string values for select', () => {
     const { queryParamsSchema } = makeSelect();
 
     // select must be a string (query params are always strings in HTTP)
-    expect(() => queryParamsSchema.parse({ select: 123 })).toThrow();
+    expect(() => queryParamsSchema().parse({ select: 123 })).toThrow();
   });
 
   /* ---------------------------------- */
@@ -113,7 +113,7 @@ describe('select', () => {
   it('validator: defaultSelect "*" projects to all selectable fields', () => {
     const { queryParamsSchema, validatorSchema } = makeSelect();
 
-    const parsed = queryParamsSchema.parse({});
+    const parsed = queryParamsSchema().parse({});
     const v = validatorSchema(parsed);
 
     // All fields present => valid
@@ -147,7 +147,7 @@ describe('select', () => {
   it('validator: explicit select narrows the expected data shape', () => {
     const { queryParamsSchema, validatorSchema } = makeSelect();
 
-    const parsed = queryParamsSchema.parse({ select: 'id,status' });
+    const parsed = queryParamsSchema().parse({ select: 'id,status' });
     const v = validatorSchema(parsed);
 
     // id + status present => valid
@@ -168,7 +168,7 @@ describe('select', () => {
   it('validator: nested path projection works correctly', () => {
     const { queryParamsSchema, validatorSchema } = makeSelect();
 
-    const parsed = queryParamsSchema.parse({ select: 'id,meta.score' });
+    const parsed = queryParamsSchema().parse({ select: 'id,meta.score' });
     const v = validatorSchema(parsed);
 
     // id + meta.score present => valid
@@ -216,7 +216,7 @@ describe('select', () => {
   it('validator: partial defaultSelect projects only those fields', () => {
     const { queryParamsSchema, validatorSchema } = makeSelectWithPartialDefault();
 
-    const parsed = queryParamsSchema.parse({});
+    const parsed = queryParamsSchema().parse({});
     const v = validatorSchema(parsed);
 
     // id + status present => valid
@@ -340,5 +340,70 @@ describe('select', () => {
         data: [{ meta: { score: 42 } }],
       }),
     ).not.toThrow();
+  });
+
+  /* ---------------------------------- */
+  /* queryParamsSchema with extra shape  */
+  /* ---------------------------------- */
+
+  it('queryParamsSchema(extra): parses extra fields alongside select', () => {
+    const { queryParamsSchema } = makeSelect();
+
+    const extended = queryParamsSchema({
+      search: z.string().optional(),
+      locale: z.enum(['en', 'fr']).default('en'),
+    });
+
+    const parsed = extended.parse({ select: 'id,status', search: 'alice', locale: 'fr' });
+
+    expect(parsed.select).toEqual(['id', 'status']);
+    expect(parsed.search).toBe('alice');
+    expect(parsed.locale).toBe('fr');
+  });
+
+  it('queryParamsSchema(extra): applies defaults for extra fields when omitted', () => {
+    const { queryParamsSchema } = makeSelect();
+
+    const extended = queryParamsSchema({
+      search: z.string().optional(),
+      locale: z.enum(['en', 'fr']).default('en'),
+    });
+
+    const parsed = extended.parse({});
+
+    expect(parsed.select).toEqual(['id', 'status', 'meta.score']);
+    expect(parsed.search).toBeUndefined();
+    expect(parsed.locale).toBe('en');
+  });
+
+  it('queryParamsSchema(extra): collects errors from both select and extra fields', () => {
+    const { queryParamsSchema } = makeSelect();
+
+    const extended = queryParamsSchema({
+      search: z.string().min(3),
+    });
+
+    expect(() =>
+      extended.parse({
+        select: 'unknownField',
+        search: 'ab',
+      }),
+    ).toThrow();
+  });
+
+  it('queryParamsSchema(extra): preserves select validation with extra fields', () => {
+    const { queryParamsSchema } = makeSelect();
+
+    const extended = queryParamsSchema({
+      search: z.string().optional(),
+    });
+
+    const parsed = extended.parse({
+      select: 'id,meta.score',
+      search: 'test',
+    });
+
+    expect(parsed.select).toEqual(['id', 'meta.score']);
+    expect(parsed.search).toBe('test');
   });
 });

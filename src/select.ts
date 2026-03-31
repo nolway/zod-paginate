@@ -56,6 +56,21 @@ export type InferData<TSchema extends DataSchema> = z.infer<TSchema>;
 export type AllowedPath<TSchema extends DataSchema> = Path<InferData<TSchema>>;
 
 /* ---------------------------------- */
+/* Response schema shapes (ZodObject)  */
+/* ---------------------------------- */
+
+/**
+ * Identity mapped type: converts an interface into a type alias with implicit
+ * index signatures — required by Zod 4's ZodObject shape constraint.
+ */
+type ZodShape<T> = { [K in keyof T]: T[K] };
+
+interface SelectResponseSchemaShapeDef {
+  data: z.ZodArray<z.ZodObject<z.ZodRawShape>>;
+}
+export type SelectResponseSchemaShape = ZodShape<SelectResponseSchemaShapeDef>;
+
+/* ---------------------------------- */
 /* Select schema */
 /* ---------------------------------- */
 
@@ -333,11 +348,16 @@ export interface SelectResult<
   TSchema extends DataSchema,
   TSelectable extends AllowedPath<TSchema> = AllowedPath<TSchema>,
 > {
-  queryParamsSchema: z.ZodType<SelectQueryParams<TSchema, TSelectable>>;
+  queryParamsSchema: {
+    (): z.ZodType<SelectQueryParams<TSchema, TSelectable>>;
+    <TExtraShape extends z.ZodRawShape>(
+      extraShape: TExtraShape,
+    ): z.ZodType<SelectQueryParams<TSchema, TSelectable> & z.infer<z.ZodObject<TExtraShape>>>;
+  };
   validatorSchema: (
     parsed?: SelectQueryParams<TSchema, TSelectable>,
   ) => z.ZodType<SelectResponse<TSchema, TSelectable>>;
-  responseSchema: z.ZodType<SelectResponse<TSchema, TSelectable>>;
+  responseSchema: z.ZodObject<SelectResponseSchemaShape>;
 }
 
 /* ---------------------------------- */
@@ -372,7 +392,7 @@ export function select<
   const defaultSelectDesc =
     config.defaultSelect === '*' ? '*' : [...config.defaultSelect].join(', ');
 
-  const queryParamsSchema: z.ZodType<SelectQueryParams<TSchema, TSelectable[number]>> = z
+  const baseQueryParamsSchema: z.ZodType<SelectQueryParams<TSchema, TSelectable[number]>> = z
     .object({
       select: z
         .string()
@@ -456,13 +476,45 @@ export function select<
   };
 
   const allSelectablePaths = config.selectable.map((f) => `${f}`);
-  const responseSchema: z.ZodType<SelectResponse<TSchema, TSelectable[number]>> = z.object({
-    data: z.array(
-      allSelectablePaths.length > 0
-        ? projectDataSchema(config.dataSchema, allSelectablePaths).partial()
-        : config.dataSchema,
-    ),
+  const dataItemSchema: z.ZodObject<z.ZodRawShape> =
+    allSelectablePaths.length > 0
+      ? projectDataSchema(config.dataSchema, allSelectablePaths).partial()
+      : config.dataSchema;
+  const responseSchema: z.ZodObject<SelectResponseSchemaShape> = z.object({
+    data: z.array(dataItemSchema),
   });
+
+  function queryParamsSchema(): z.ZodType<SelectQueryParams<TSchema, TSelectable[number]>>;
+  function queryParamsSchema<TExtraShape extends z.ZodRawShape>(
+    extraShape: TExtraShape,
+  ): z.ZodType<SelectQueryParams<TSchema, TSelectable[number]> & z.infer<z.ZodObject<TExtraShape>>>;
+  function queryParamsSchema<TExtraShape extends z.ZodRawShape>(
+    extraShape?: TExtraShape,
+  ): z.ZodType {
+    if (!extraShape) return baseQueryParamsSchema;
+
+    const extraSchema = z.object(extraShape);
+    return z
+      .record(z.string(), z.unknown())
+      .superRefine((raw, ctx) => {
+        const baseResult = baseQueryParamsSchema.safeParse(raw);
+        if (!baseResult.success) {
+          for (const issue of baseResult.error.issues) {
+            ctx.addIssue({ code: 'custom', message: issue.message, path: issue.path });
+          }
+        }
+        const extraResult = extraSchema.safeParse(raw);
+        if (!extraResult.success) {
+          for (const issue of extraResult.error.issues) {
+            ctx.addIssue({ code: 'custom', message: issue.message, path: issue.path });
+          }
+        }
+      })
+      .transform((raw) => ({
+        ...baseQueryParamsSchema.parse(raw),
+        ...extraSchema.parse(raw),
+      }));
+  }
 
   return { queryParamsSchema, validatorSchema, responseSchema };
 }
