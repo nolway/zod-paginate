@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.4.1](https://github.com/nolway/zod-paginate/compare/v1.4.0...v1.4.1) (2026-04-01)
+
+
+### Bug Fixes
+
+* use object shape instead of record ([e89c071](https://github.com/nolway/zod-paginate/commit/e89c071308454c10167081459b697dfe888a8df2))
+
+
+### Miscellaneous Chores
+
+* release 1.4.1 ([0dce861](https://github.com/nolway/zod-paginate/commit/0dce8618a4e6244291940faac05dc8d4370375c8))
+
 ## [1.4.0](https://github.com/nolway/zod-paginate/compare/v1.3.4...v1.4.0) (2026-03-31)
 
 
