@@ -1712,7 +1712,8 @@ export function paginate<
 
     const extraSchema = z.object(extraShape);
     return z
-      .record(z.string(), z.unknown())
+      .object({ ...rootShape, ...extraShape })
+      .catchall(z.unknown())
       .superRefine((raw, ctx) => {
         const pagResult = baseQueryParamsSchema.safeParse(raw);
         if (!pagResult.success) {

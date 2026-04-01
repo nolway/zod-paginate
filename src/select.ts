@@ -392,16 +392,18 @@ export function select<
   const defaultSelectDesc =
     config.defaultSelect === '*' ? '*' : [...config.defaultSelect].join(', ');
 
+  const rootShape: Record<string, z.ZodType> = {
+    select: z
+      .string()
+      .optional()
+      .meta({
+        description: `Comma-separated list of fields to include in the response. Allowed: ${selectableList}. Use "*" to select all. Default: ${defaultSelectDesc}`,
+        example: selectableList,
+      }),
+  };
+
   const baseQueryParamsSchema: z.ZodType<SelectQueryParams<TSchema, TSelectable[number]>> = z
-    .object({
-      select: z
-        .string()
-        .optional()
-        .meta({
-          description: `Comma-separated list of fields to include in the response. Allowed: ${selectableList}. Use "*" to select all. Default: ${defaultSelectDesc}`,
-          example: selectableList,
-        }),
-    })
+    .object(rootShape)
     .catchall(z.unknown())
     .transform((q): Record<string, unknown> => {
       const raw = q.select;
@@ -495,7 +497,8 @@ export function select<
 
     const extraSchema = z.object(extraShape);
     return z
-      .record(z.string(), z.unknown())
+      .object({ ...rootShape, ...extraShape })
+      .catchall(z.unknown())
       .superRefine((raw, ctx) => {
         const baseResult = baseQueryParamsSchema.safeParse(raw);
         if (!baseResult.success) {
