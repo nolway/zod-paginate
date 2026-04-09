@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.5.0](https://github.com/nolway/zod-paginate/compare/v1.4.1...v1.5.0) (2026-04-09)
+
+
+### Miscellaneous Chores
+
+* release 1.5.0 ([78ef02a](https://github.com/nolway/zod-paginate/commit/78ef02aa803315c88408e817820006a5efff7fda))
+
 ## [1.4.1](https://github.com/nolway/zod-paginate/compare/v1.4.0...v1.4.1) (2026-04-01)
 
 
