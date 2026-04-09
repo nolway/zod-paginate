@@ -3,7 +3,10 @@ import {
   type AllowedPath,
   computeSelect,
   type DataSchema,
+  type EnsureDiscriminatorInSelectable,
   expandSelect,
+  findNestedDiscriminators,
+  getDiscriminatorKey,
   getOwnProp,
   getZodAtPath,
   type InferData,
@@ -12,9 +15,12 @@ import {
   type Path,
   type PathValue,
   pickFromAllowlist,
-  projectDataSchema,
+  projectDataSchemaPreservingUnion,
   type ProjectedData,
+  resolveToZodObject,
   SelectSchema,
+  type UntypedSelectableConfig,
+  type ZodShape,
 } from './select';
 
 /* ---------------------------------- */
@@ -889,13 +895,9 @@ export type PaginationResponse<
 /* ---------------------------------- */
 
 /**
- * Identity mapped type: converts an interface into a type alias with implicit
- * index signatures. Zod 4's ZodObject requires `Shape extends $ZodShape`
- * (a string-indexed record), which interfaces don't satisfy. Plain `type`
- * aliases would work but violate `consistent-type-definitions`. A mapped type
- * gives us both: ESLint-clean interfaces + implicit index signatures for Zod.
+ * Re-exported from select.ts for use in paginate response schema shapes.
  */
-type ZodShape<T> = { [K in keyof T]: T[K] };
+// ZodShape is imported from './select' and used locally only.
 
 interface LimitOffsetPaginationMetaSchemaShapeDef {
   itemsPerPage: z.ZodNumber;
@@ -917,13 +919,13 @@ interface CursorPaginationMetaSchemaShapeDef {
 export type CursorPaginationMetaSchemaShape = ZodShape<CursorPaginationMetaSchemaShapeDef>;
 
 interface LimitOffsetResponseSchemaShapeDef {
-  data: z.ZodArray<z.ZodObject<z.ZodRawShape>>;
+  data: z.ZodArray<z.ZodType>;
   pagination: z.ZodObject<LimitOffsetPaginationMetaSchemaShape>;
 }
 export type LimitOffsetResponseSchemaShape = ZodShape<LimitOffsetResponseSchemaShapeDef>;
 
 interface CursorResponseSchemaShapeDef {
-  data: z.ZodArray<z.ZodObject<z.ZodRawShape>>;
+  data: z.ZodArray<z.ZodType>;
   pagination: z.ZodObject<CursorPaginationMetaSchemaShape>;
 }
 export type CursorResponseSchemaShape = ZodShape<CursorResponseSchemaShapeDef>;
@@ -944,20 +946,20 @@ export type PaginationResponseSchemaShape<TType extends PaginationType> =
  *   return paginate({ dataSchema: MySchema, … });
  * }
  */
+/* eslint-disable @typescript-eslint/no-unused-vars */
 export interface PaginateResult<
   TSchema extends DataSchema,
   TSelectable extends AllowedPath<TSchema> = AllowedPath<TSchema>,
   TType extends PaginationType = PaginationType,
 > {
+  /* eslint-enable @typescript-eslint/no-unused-vars */
   queryParamsSchema: {
     (): z.ZodType<PaginationQueryParams<TSchema, TType>>;
     <TExtraShape extends z.ZodRawShape>(
       extraShape: TExtraShape,
     ): z.ZodType<PaginationQueryParams<TSchema, TType> & z.infer<z.ZodObject<TExtraShape>>>;
   };
-  validatorSchema: (
-    parsed?: PaginationPayload<TSchema>,
-  ) => z.ZodType<PaginationResponse<TSchema, TSelectable, TType>>;
+  validatorSchema: (parsed?: PaginationPayload<TSchema>) => z.ZodType;
   responseSchema: z.ZodObject<PaginationResponseSchemaShape<TType>>;
 }
 
@@ -1122,7 +1124,7 @@ interface LimitOffsetResponseSchemaParts {
 }
 
 function buildLimitOffsetResponseSchema(
-  dataItemSchema: z.ZodObject<z.ZodRawShape>,
+  dataItemSchema: z.ZodType,
   parts: LimitOffsetResponseSchemaParts,
 ): z.ZodObject<LimitOffsetResponseSchemaShape> {
   return z.object({
@@ -1150,7 +1152,7 @@ interface CursorResponseSchemaParts {
 }
 
 function buildCursorResponseSchema(
-  dataItemSchema: z.ZodObject<z.ZodRawShape>,
+  dataItemSchema: z.ZodType,
   parts: CursorResponseSchemaParts,
 ): z.ZodObject<CursorResponseSchemaShape> {
   return z.object({
@@ -1187,7 +1189,7 @@ export function paginate<
     'selectable' | 'defaultSelect' | 'sortable' | 'defaultSortBy' | 'filterable'
   > &
     LimitOffsetPaginationConfig & {
-      selectable?: TSelectable;
+      selectable?: EnsureDiscriminatorInSelectable<TSchema, TSelectable>;
       defaultSelect: readonly NoInfer<TSelectable[number]>[] | '*';
       sortable?: readonly NoInfer<TSelectable[number]>[];
       defaultSortBy?: readonly {
@@ -1211,7 +1213,7 @@ export function paginate<
     'selectable' | 'defaultSelect' | 'sortable' | 'defaultSortBy' | 'filterable'
   > &
     CursorPaginationConfig<InferData<TSchema>> & {
-      selectable?: TSelectable;
+      selectable?: EnsureDiscriminatorInSelectable<TSchema, TSelectable>;
       defaultSelect: readonly NoInfer<TSelectable[number]>[] | '*';
       sortable?: readonly NoInfer<TSelectable[number]>[];
       defaultSortBy?: readonly {
@@ -1234,7 +1236,7 @@ export function paginate<
     CommonQueryConfigFromSchema<TSchema, TSelectable[number]>,
     'selectable' | 'defaultSelect' | 'sortable' | 'defaultSortBy' | 'filterable'
   > & {
-    selectable?: TSelectable;
+    selectable?: EnsureDiscriminatorInSelectable<TSchema, TSelectable>;
     defaultSelect: readonly NoInfer<TSelectable[number]>[] | '*';
     sortable?: readonly NoInfer<TSelectable[number]>[];
     defaultSortBy?: readonly {
@@ -1257,7 +1259,7 @@ export function paginate<
     CommonQueryConfigFromSchema<TSchema, TSelectable[number]>,
     'selectable' | 'defaultSelect' | 'sortable' | 'defaultSortBy' | 'filterable'
   > & {
-    selectable?: TSelectable;
+    selectable?: EnsureDiscriminatorInSelectable<TSchema, TSelectable>;
     defaultSelect: readonly TSelectable[number][] | '*';
     sortable?: readonly TSelectable[number][];
     defaultSortBy?: readonly {
@@ -1271,13 +1273,23 @@ export function paginate<
     }>;
   } & (LimitOffsetPaginationConfig | CursorPaginationConfig<InferData<TSchema>>),
 ): PaginateResult<TSchema, TSelectable[number]> {
-  const allowedSelectable = new Set<string>();
-  for (const f of config.selectable ?? []) allowedSelectable.add(`${f}`);
+  const discriminatorKey = getDiscriminatorKey(config.dataSchema);
+  const nestedDiscriminators = findNestedDiscriminators(config.dataSchema);
+
+  const selectableStrings: string[] = [...(config.selectable ?? [])];
+
+  const effectiveConfig: UntypedSelectableConfig = {
+    selectable: selectableStrings,
+    defaultSelect: config.defaultSelect === '*' ? '*' : Array.from(config.defaultSelect, String),
+  };
+
+  const allowedSelectable = new Set<string>(selectableStrings);
 
   const allowedSortable = new Set<string>();
   for (const f of config.sortable ?? []) allowedSortable.add(`${f}`);
 
   const filterable = toFilterableRuntime(config.filterable);
+  const filterableOps = new Map(Object.entries(filterable).map(([k, v]) => [k, new Set(v.ops)]));
 
   const baseSchema = z.object({
     limit: NumericStringSchema.optional(),
@@ -1442,9 +1454,11 @@ export function paginate<
           }
 
           // select allowlist + "*" expandability
-          const selectForValidation =
+          const selectForValidation: readonly string[] =
             val.select ??
-            (config.defaultSelect === '*' ? ['*'] : config.defaultSelect.map((x) => `${x}`));
+            (effectiveConfig.defaultSelect === '*' ? ['*'] : effectiveConfig.defaultSelect);
+
+          const hasWildcard = selectForValidation.includes('*');
 
           {
             let index = 0;
@@ -1466,14 +1480,45 @@ export function paginate<
               index += 1;
             }
 
-            if (selectForValidation.includes('*')) {
-              const expanded = expandSelect(selectForValidation, config);
+            if (hasWildcard) {
+              const expanded = expandSelect(selectForValidation, effectiveConfig);
               if (!expanded || expanded.length === 0) {
                 ctx.addIssue({
                   code: 'custom',
                   path: ['select'],
                   message: `select "*" cannot be expanded (missing selectable in config)`,
                 });
+              }
+            }
+
+            if (
+              discriminatorKey &&
+              !hasWildcard &&
+              !selectForValidation.includes(discriminatorKey)
+            ) {
+              ctx.addIssue({
+                code: 'custom',
+                path: ['select'],
+                message: `select must include the discriminator field "${discriminatorKey}" when using a discriminated union`,
+              });
+            }
+
+            // Check nested discriminated unions
+            if (!hasWildcard) {
+              for (const nested of nestedDiscriminators) {
+                const hasAnyFieldUnderPrefix = selectForValidation.some(
+                  (f) => f === nested.prefix || f.startsWith(`${nested.prefix}.`),
+                );
+                if (
+                  hasAnyFieldUnderPrefix &&
+                  !selectForValidation.includes(nested.discriminatorPath)
+                ) {
+                  ctx.addIssue({
+                    code: 'custom',
+                    path: ['select'],
+                    message: `select must include the discriminator field "${nested.discriminatorPath}" when selecting fields under "${nested.prefix}" (discriminated union)`,
+                  });
+                }
               }
             }
           }
@@ -1515,7 +1560,7 @@ export function paginate<
               continue;
             }
 
-            const allowedOps = new Set(cfg.ops);
+            const allowedOps = filterableOps.get(field) ?? new Set<Operator>();
 
             let index = 0;
             for (const cond of conditions) {
@@ -1566,7 +1611,10 @@ export function paginate<
         .transform((val): PaginationQueryParams<TSchema> => {
           const limit = computeLimit(val.limit, config.defaultLimit);
           const sortBy = computeSortBy(val.sortBy, config);
-          const select = computeSelect(val.select, config);
+          const rawSelect = computeSelect(val.select, effectiveConfig);
+          const select = rawSelect?.filter(
+            (field): field is AllowedPath<TSchema> => typeof field === 'string',
+          );
 
           const hasAnyFilter = Object.keys(val.rawFilters).length > 0;
 
@@ -1632,18 +1680,14 @@ export function paginate<
   const CURSOR_META_DESC = 'Pagination metadata for cursor mode';
   const CURSOR_VALUE_DESC = 'Cursor value pointing to the last item returned';
 
-  const validatorSchema = (
-    parsed?: PaginationPayload<TSchema>,
-  ): z.ZodType<PaginationResponse<TSchema, TSelectable[number]>> => {
-    const effectiveSelect = parsed?.select ?? computeSelect(undefined, config) ?? undefined;
+  const validatorSchema = (parsed?: PaginationPayload<TSchema>): z.ZodType => {
+    const effectiveSelect =
+      parsed?.select ?? computeSelect(undefined, effectiveConfig) ?? undefined;
 
     const dataItemSchema =
       effectiveSelect && effectiveSelect.length > 0
-        ? projectDataSchema(
-            config.dataSchema,
-            effectiveSelect.map((x) => `${x}`),
-          )
-        : config.dataSchema;
+        ? projectDataSchemaPreservingUnion(config.dataSchema, effectiveSelect.map(String))
+        : resolveToZodObject(config.dataSchema);
 
     if (config.paginationType === 'LIMIT_OFFSET') {
       return z.object({
@@ -1675,11 +1719,10 @@ export function paginate<
     });
   };
 
-  const allSelectablePaths = (config.selectable ?? []).map((f) => `${f}`);
   const partialDataItemSchema =
-    allSelectablePaths.length > 0
-      ? projectDataSchema(config.dataSchema, allSelectablePaths).partial()
-      : config.dataSchema;
+    selectableStrings.length > 0
+      ? projectDataSchemaPreservingUnion(config.dataSchema, selectableStrings, { partial: true })
+      : resolveToZodObject(config.dataSchema);
 
   const responseSchema =
     config.paginationType === 'LIMIT_OFFSET'

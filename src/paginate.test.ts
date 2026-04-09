@@ -1089,3 +1089,804 @@ describe('PaginationType narrowing', () => {
     ).not.toThrow();
   });
 });
+
+/* ---------------------------------- */
+/* Discriminated union support       */
+/* ---------------------------------- */
+
+describe('paginate with ZodDiscriminatedUnion', () => {
+  const VideoSchema = z.object({
+    type: z.literal('video'),
+    id: z.number(),
+    name: z.string(),
+    duration: z.number(),
+  });
+
+  const AudioSchema = z.object({
+    type: z.literal('audio'),
+    id: z.number(),
+    name: z.string(),
+    bitrate: z.number(),
+  });
+
+  const MediaSchema = z.discriminatedUnion('type', [VideoSchema, AudioSchema]);
+
+  // eslint-disable-next-line @typescript-eslint/explicit-function-return-type
+  function makeUnionLimitOffset() {
+    return paginate({
+      paginationType: 'LIMIT_OFFSET',
+      dataSchema: MediaSchema,
+      selectable: ['id', 'name', 'type'],
+      defaultSelect: ['id', 'type'],
+      defaultLimit: 20,
+      maxLimit: 100,
+    });
+  }
+
+  // eslint-disable-next-line @typescript-eslint/explicit-function-return-type
+  function makeUnionCursor() {
+    return paginate({
+      paginationType: 'CURSOR',
+      dataSchema: MediaSchema,
+      cursorProperty: 'id',
+      selectable: ['id', 'name', 'type'],
+      defaultSelect: '*',
+      defaultLimit: 10,
+      maxLimit: 50,
+    });
+  }
+
+  it('parses query params with limit-offset pagination', () => {
+    const { queryParamsSchema } = makeUnionLimitOffset();
+    const parsed = queryParamsSchema().parse({
+      select: 'id,name,type',
+      limit: '10',
+      page: '1',
+    });
+    expect(parsed.pagination.select).toEqual(['id', 'name', 'type']);
+    expect(parsed.pagination.limit).toBe(10);
+    expect(parsed.pagination.page).toBe(1);
+  });
+
+  it('validates response with limit-offset pagination', () => {
+    const { queryParamsSchema, validatorSchema } = makeUnionLimitOffset();
+    const parsed = queryParamsSchema().parse({
+      select: 'id,name,type',
+      limit: '10',
+      page: '1',
+    });
+    const schema = validatorSchema(parsed.pagination);
+    const result = schema.safeParse({
+      data: [{ id: 1, name: 'test', type: 'video' }],
+      pagination: { itemsPerPage: 10, totalItems: 1, currentPage: 1, totalPages: 1 },
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('builds responseSchema from discriminated union (limit-offset)', () => {
+    const { responseSchema } = makeUnionLimitOffset();
+    const result = responseSchema.safeParse({
+      data: [{ id: 1 }],
+      pagination: { itemsPerPage: 20, totalItems: 1, currentPage: 1, totalPages: 1 },
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('parses query params with cursor pagination', () => {
+    const { queryParamsSchema } = makeUnionCursor();
+    const parsed = queryParamsSchema().parse({ select: 'id,name,type', limit: '5' });
+    expect(parsed.pagination.select).toEqual(['id', 'name', 'type']);
+    expect(parsed.pagination.limit).toBe(5);
+  });
+
+  it('validates response with cursor pagination', () => {
+    const { queryParamsSchema, validatorSchema } = makeUnionCursor();
+    const parsed = queryParamsSchema().parse({ select: 'id,name,type', limit: '5' });
+    const schema = validatorSchema(parsed.pagination);
+    const result = schema.safeParse({
+      data: [{ id: 1, name: 'clip', type: 'video' }],
+      pagination: { itemsPerPage: 5, cursor: 1 },
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('builds responseSchema from discriminated union (cursor)', () => {
+    const { responseSchema } = makeUnionCursor();
+    const result = responseSchema.safeParse({
+      data: [{ id: 1, name: 'clip', type: 'video' }],
+      pagination: { itemsPerPage: 10, cursor: 1 },
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('defaults select with discriminated union', () => {
+    const { queryParamsSchema } = makeUnionLimitOffset();
+    const parsed = queryParamsSchema().parse({ limit: '10', page: '1' });
+    expect(parsed.pagination.select).toEqual(['id', 'type']);
+  });
+
+  it('rejects select without discriminator field', () => {
+    const { queryParamsSchema } = makeUnionLimitOffset();
+    const result = queryParamsSchema().safeParse({
+      select: 'id,name',
+      limit: '10',
+      page: '1',
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('validatorSchema preserves union structure (limit-offset)', () => {
+    const p = paginate({
+      paginationType: 'LIMIT_OFFSET',
+      dataSchema: MediaSchema,
+      selectable: ['id', 'type', 'duration', 'bitrate'],
+      defaultSelect: '*',
+      defaultLimit: 20,
+      maxLimit: 100,
+    });
+    const parsed = p.queryParamsSchema().parse({ limit: '10', page: '1' });
+    const schema = p.validatorSchema(parsed.pagination);
+
+    // Video item → valid
+    expect(
+      schema.safeParse({
+        data: [{ id: 1, type: 'video', duration: 120 }],
+        pagination: { itemsPerPage: 10, totalItems: 1, currentPage: 1, totalPages: 1 },
+      }).success,
+    ).toBe(true);
+
+    // Audio item → valid
+    expect(
+      schema.safeParse({
+        data: [{ id: 2, type: 'audio', bitrate: 320 }],
+        pagination: { itemsPerPage: 10, totalItems: 1, currentPage: 1, totalPages: 1 },
+      }).success,
+    ).toBe(true);
+  });
+
+  it('responseSchema preserves union structure with partial per option', () => {
+    const p = paginate({
+      paginationType: 'LIMIT_OFFSET',
+      dataSchema: MediaSchema,
+      selectable: ['id', 'type', 'duration', 'bitrate'],
+      defaultSelect: '*',
+      defaultLimit: 20,
+      maxLimit: 100,
+    });
+
+    // Video-like partial
+    expect(
+      p.responseSchema.safeParse({
+        data: [{ type: 'video', duration: 120 }],
+        pagination: { itemsPerPage: 20, totalItems: 1, currentPage: 1, totalPages: 1 },
+      }).success,
+    ).toBe(true);
+
+    // Audio-like partial
+    expect(
+      p.responseSchema.safeParse({
+        data: [{ type: 'audio', bitrate: 320 }],
+        pagination: { itemsPerPage: 20, totalItems: 1, currentPage: 1, totalPages: 1 },
+      }).success,
+    ).toBe(true);
+  });
+});
+
+/* ------------------------------------------- */
+/* Edge cases & missing branch coverage         */
+/* ------------------------------------------- */
+
+describe('paginate edge cases', () => {
+  /* ---- select without selectable configured ---- */
+
+  it('rejects select param when no selectable is configured', () => {
+    const p = paginate({
+      paginationType: 'LIMIT_OFFSET',
+      dataSchema: ModelSchema,
+      defaultLimit: 10,
+      maxLimit: 50,
+      defaultSelect: '*',
+    });
+
+    const result = p.queryParamsSchema().safeParse({ select: 'id', limit: '10' });
+    expect(result.success).toBe(false);
+  });
+
+  /* ---- sortBy without sortable configured ---- */
+
+  it('rejects sortBy param when no sortable is configured', () => {
+    const p = paginate({
+      paginationType: 'LIMIT_OFFSET',
+      dataSchema: ModelSchema,
+      selectable: ['id', 'status'],
+      defaultLimit: 10,
+      maxLimit: 50,
+      defaultSelect: '*',
+    });
+
+    const result = p.queryParamsSchema().safeParse({ sortBy: 'id:ASC', limit: '10' });
+    expect(result.success).toBe(false);
+  });
+
+  /* ---- limit=0 ---- */
+
+  it('accepts limit=0 as a valid limit', () => {
+    const { queryParamsSchema } = makeLimitOffset();
+
+    const parsed = queryParamsSchema().parse({ limit: '0' });
+    expect(parsed.pagination.limit).toBe(0);
+  });
+
+  /* ---- Default operator $eq (no $ prefix) ---- */
+
+  it('parses filter without $ prefix as $eq', () => {
+    const { queryParamsSchema } = makeLimitOffset();
+
+    const parsed = queryParamsSchema().parse({
+      'filter.status': 'active',
+      limit: '10',
+    });
+    expect(parsed.pagination.filters).toBeDefined();
+  });
+
+  /* ---- $ilike on non-string field rejected ---- */
+
+  it('rejects $ilike operator on a number field', () => {
+    const { queryParamsSchema } = makeLimitOffset();
+
+    const result = queryParamsSchema().safeParse({
+      'filter.id': '$ilike:test',
+      limit: '10',
+    });
+    expect(result.success).toBe(false);
+  });
+
+  /* ---- $sw on non-string field rejected ---- */
+
+  it('rejects $sw operator on a number field', () => {
+    const { queryParamsSchema } = makeLimitOffset();
+
+    const result = queryParamsSchema().safeParse({
+      'filter.id': '$sw:test',
+      limit: '10',
+    });
+    expect(result.success).toBe(false);
+  });
+
+  /* ---- $btw on a number field with non-parseable values rejected at runtime ---- */
+
+  it('rejects $btw with string values on a number field', () => {
+    const p = paginate({
+      paginationType: 'LIMIT_OFFSET',
+      dataSchema: ModelSchema,
+      selectable: ['id', 'status'],
+      filterable: {
+        id: { type: 'number', ops: ['$eq', '$btw'] },
+      },
+      defaultLimit: 10,
+      maxLimit: 50,
+      defaultSelect: ['id'],
+    });
+
+    // $btw calls parseNumOrDateStrict which throws for non-numeric/non-date values
+    expect(() =>
+      p.queryParamsSchema().parse({
+        'filter.id': '$btw:a,z',
+        limit: '10',
+      }),
+    ).toThrow();
+  });
+
+  /* ---- $eq type mismatch on string field ---- */
+
+  it('accepts $eq with string value on a string field', () => {
+    const { queryParamsSchema } = makeLimitOffset();
+
+    const parsed = queryParamsSchema().parse({
+      'filter.status': '$eq:active',
+      limit: '10',
+    });
+    expect(parsed.pagination.filters).toBeDefined();
+  });
+
+  /* ---- $gt on a number field with non-parseable values rejected at runtime ---- */
+
+  it('rejects $gt with non-parseable value on a number field', () => {
+    const p = paginate({
+      paginationType: 'LIMIT_OFFSET',
+      dataSchema: ModelSchema,
+      selectable: ['id', 'status'],
+      filterable: {
+        id: { type: 'number', ops: ['$eq', '$gt'] },
+      },
+      defaultLimit: 10,
+      maxLimit: 50,
+      defaultSelect: ['id'],
+    });
+
+    // $gt calls parseNumOrDateStrict which throws for non-numeric/non-date values
+    expect(() =>
+      p.queryParamsSchema().parse({
+        'filter.id': '$gt:abc',
+        limit: '10',
+      }),
+    ).toThrow();
+  });
+
+  /* ---- $eq on number field with non-number value ---- */
+
+  it('rejects $eq with non-number value on a number field', () => {
+    const { queryParamsSchema } = makeLimitOffset();
+
+    // 'not-a-number' will be parsed as a string by parseSingleCondition ($eq accepts strings),
+    // but validateConditionType checks the value type matches the field type
+    const result = queryParamsSchema().safeParse({
+      'filter.id': '$eq:not-a-number',
+      limit: '10',
+    });
+    expect(result.success).toBe(false);
+  });
+
+  /* ---- $eq on date field with non-date value ---- */
+
+  it('rejects $eq with non-date value on a date field', () => {
+    const { queryParamsSchema } = makeLimitOffset();
+
+    const result = queryParamsSchema().safeParse({
+      'filter.createdAt': '$eq:not-a-date',
+      limit: '10',
+    });
+    expect(result.success).toBe(false);
+  });
+
+  /* ---- $gt on number field with non-number value ---- */
+
+  it('rejects $gt with non-number value on a number field', () => {
+    const { queryParamsSchema } = makeLimitOffset();
+
+    // parseNumOrDateStrict throws for 'abc'
+    expect(() =>
+      queryParamsSchema().parse({
+        'filter.id': '$gt:abc',
+        limit: '10',
+      }),
+    ).toThrow();
+  });
+
+  /* ---- $gt on date field with non-date value ---- */
+
+  it('rejects $gt with non-date value on a date field', () => {
+    const { queryParamsSchema } = makeLimitOffset();
+
+    // parseNumOrDateStrict throws for non-date values
+    expect(() =>
+      queryParamsSchema().parse({
+        'filter.createdAt': '$gt:not-a-date',
+        limit: '10',
+      }),
+    ).toThrow();
+  });
+
+  /* ---- $btw on number field with non-number bounds ---- */
+
+  it('rejects $btw on number field with non-number bounds', () => {
+    const p = paginate({
+      paginationType: 'LIMIT_OFFSET',
+      dataSchema: ModelSchema,
+      selectable: ['id', 'status'],
+      filterable: {
+        id: { type: 'number', ops: ['$btw'] },
+      },
+      defaultLimit: 10,
+      maxLimit: 50,
+      defaultSelect: ['id'],
+    });
+
+    // $btw calls parseNumOrDateStrict which throws for 'abc,def'
+    expect(() =>
+      p.queryParamsSchema().parse({
+        'filter.id': '$btw:abc,def',
+        limit: '10',
+      }),
+    ).toThrow();
+  });
+
+  /* ---- $btw on date field with non-date bounds ---- */
+
+  it('rejects $btw on date field with non-date bounds', () => {
+    const { queryParamsSchema } = makeLimitOffset();
+
+    // 'abc,def' fails parseNumOrDateStrict → throws during DSL parsing
+    expect(() =>
+      queryParamsSchema().parse({
+        'filter.createdAt': '$btw:abc,def',
+        limit: '10',
+      }),
+    ).toThrow();
+  });
+
+  /* ---- $btw with mixed types (number and date) ---- */
+
+  it('rejects $btw with mixed bound types', () => {
+    const { queryParamsSchema } = makeLimitOffset();
+
+    expect(() =>
+      queryParamsSchema().parse({
+        'filter.id': '$btw:10,2025-01-01',
+        limit: '10',
+      }),
+    ).toThrow();
+  });
+
+  /* ---- $null on any field ---- */
+
+  it('accepts $null operator regardless of field type', () => {
+    const { queryParamsSchema } = makeLimitOffset();
+
+    const parsed = queryParamsSchema().parse({
+      'filter.createdAt': '$null',
+      limit: '10',
+    });
+    expect(parsed.pagination.filters).toBeDefined();
+  });
+
+  /* ---- $not negation ---- */
+
+  it('parses $not:$null correctly', () => {
+    const { queryParamsSchema } = makeLimitOffset();
+
+    const parsed = queryParamsSchema().parse({
+      'filter.createdAt': '$not:$null',
+      limit: '10',
+    });
+    expect(parsed.pagination.filters).toBeDefined();
+  });
+
+  it('parses $not:$eq correctly', () => {
+    const { queryParamsSchema } = makeLimitOffset();
+
+    const parsed = queryParamsSchema().parse({
+      'filter.status': '$not:$eq:active',
+      limit: '10',
+    });
+    expect(parsed.pagination.filters).toBeDefined();
+  });
+
+  /* ---- $contains operator ---- */
+
+  it('parses $contains operator', () => {
+    const p = paginate({
+      paginationType: 'LIMIT_OFFSET',
+      dataSchema: ModelSchema,
+      selectable: ['id', 'status'],
+      filterable: {
+        status: { type: 'string', ops: ['$contains'] },
+      },
+      defaultLimit: 10,
+      maxLimit: 50,
+      defaultSelect: ['id'],
+    });
+
+    const parsed = p.queryParamsSchema().parse({
+      'filter.status': '$contains:a,b,c',
+      limit: '10',
+    });
+    expect(parsed.pagination.filters).toBeDefined();
+  });
+
+  /* ---- Invalid $g: prefix (missing condition) ---- */
+
+  it('rejects $g: prefix without a condition after the group ID', () => {
+    const { queryParamsSchema } = makeLimitOffset();
+
+    expect(() =>
+      queryParamsSchema().parse({
+        'filter.status': '$g:1',
+        limit: '10',
+      }),
+    ).toThrow();
+  });
+
+  /* ---- combinator without condition ---- */
+
+  it('rejects $and without a following condition', () => {
+    const { queryParamsSchema } = makeLimitOffset();
+
+    expect(() =>
+      queryParamsSchema().parse({
+        'filter.status': '$g:1:$and',
+        limit: '10',
+      }),
+    ).toThrow();
+  });
+
+  /* ---- $not without operator ---- */
+
+  it('rejects $not without an operator after it', () => {
+    const { queryParamsSchema } = makeLimitOffset();
+
+    expect(() =>
+      queryParamsSchema().parse({
+        'filter.status': '$not',
+        limit: '10',
+      }),
+    ).toThrow();
+  });
+
+  /* ---- group.0.join is rejected ---- */
+
+  it('rejects group.0.join on root group', () => {
+    const { queryParamsSchema } = makeLimitOffset();
+
+    expect(() =>
+      queryParamsSchema().parse({
+        'filter.status': '$g:1:$eq:active',
+        'group.0.join': '$and',
+        'group.1.parent': '0',
+        limit: '10',
+      }),
+    ).toThrow();
+  });
+
+  /* ---- group without any filters ---- */
+
+  it('rejects group definitions without any filters', () => {
+    const { queryParamsSchema } = makeLimitOffset();
+
+    const result = queryParamsSchema().safeParse({
+      'group.1.parent': '0',
+      'group.1.join': '$and',
+      limit: '10',
+    });
+    expect(result.success).toBe(false);
+  });
+
+  /* ---- group.X without property (dotIdx === -1) silently ignored ---- */
+
+  it('ignores malformed group keys without property', () => {
+    const { queryParamsSchema } = makeLimitOffset();
+
+    // group.1 (no .property) should be silently ignored
+    const parsed = queryParamsSchema().parse({
+      'filter.status': '$eq:active',
+      'group.1': '$and',
+      limit: '10',
+    });
+    expect(parsed.pagination.filters).toBeDefined();
+  });
+
+  /* ---- cursor mode ---- */
+
+  it('CURSOR: rejects non-integer string cursor for number cursorProperty', () => {
+    const { queryParamsSchema } = makeCursor();
+
+    const result = queryParamsSchema().safeParse({
+      cursor: 'not-a-number',
+      limit: '10',
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('CURSOR: accepts valid date cursor for date cursorProperty', () => {
+    const p = paginate({
+      paginationType: 'CURSOR',
+      dataSchema: ModelSchema,
+      cursorProperty: 'createdAt',
+      selectable: ['id', 'status', 'createdAt'],
+      defaultLimit: 10,
+      maxLimit: 50,
+      defaultSelect: ['id'],
+    });
+
+    const parsed = p.queryParamsSchema().parse({
+      cursor: '2025-01-15',
+      limit: '10',
+    });
+    expect(parsed.pagination.type).toBe('CURSOR');
+    expect(parsed.pagination.cursor).toBe('2025-01-15');
+  });
+
+  it('CURSOR: rejects invalid date cursor for date cursorProperty', () => {
+    const p = paginate({
+      paginationType: 'CURSOR',
+      dataSchema: ModelSchema,
+      cursorProperty: 'createdAt',
+      selectable: ['id', 'status', 'createdAt'],
+      defaultLimit: 10,
+      maxLimit: 50,
+      defaultSelect: ['id'],
+    });
+
+    const result = p.queryParamsSchema().safeParse({
+      cursor: 'not-a-date',
+      limit: '10',
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('CURSOR: accepts string cursor for string cursorProperty', () => {
+    const StringModel = z.object({
+      id: z.number(),
+      slug: z.string(),
+    });
+    const p = paginate({
+      paginationType: 'CURSOR',
+      dataSchema: StringModel,
+      cursorProperty: 'slug',
+      selectable: ['id', 'slug'],
+      defaultLimit: 10,
+      maxLimit: 50,
+      defaultSelect: ['id'],
+    });
+
+    const parsed = p.queryParamsSchema().parse({
+      cursor: 'my-slug',
+      limit: '10',
+    });
+    expect(parsed.pagination.cursor).toBe('my-slug');
+  });
+
+  it('CURSOR: validatorSchema() without args uses defaultSelect and cursor schema', () => {
+    const { validatorSchema } = makeCursor();
+
+    const schema = validatorSchema();
+    expect(() =>
+      schema.parse({
+        data: [{ id: 1, createdAt: new Date() }],
+        pagination: { itemsPerPage: 10, cursor: 42 },
+      }),
+    ).not.toThrow();
+  });
+
+  it('CURSOR: responseSchema uses cursor schema from cursorProperty', () => {
+    const { responseSchema } = makeCursor();
+
+    // number cursor → valid
+    expect(
+      responseSchema.safeParse({
+        data: [],
+        pagination: { itemsPerPage: 10, cursor: 42 },
+      }).success,
+    ).toBe(true);
+
+    // string cursor → rejected (cursorProperty is z.number)
+    expect(
+      responseSchema.safeParse({
+        data: [],
+        pagination: { itemsPerPage: 10, cursor: 'abc' },
+      }).success,
+    ).toBe(false);
+  });
+
+  /* ---- Nested discriminated unions in paginate ---- */
+
+  it('paginate rejects select without discriminator on top-level discriminated union', () => {
+    const MediaSchema = z.discriminatedUnion('type', [
+      z.object({ type: z.literal('audio'), id: z.number(), bitrate: z.number() }),
+      z.object({ type: z.literal('video'), id: z.number(), duration: z.number() }),
+    ]);
+
+    const p = paginate({
+      paginationType: 'LIMIT_OFFSET',
+      dataSchema: MediaSchema,
+      selectable: ['id', 'type'],
+      defaultLimit: 10,
+      maxLimit: 50,
+      defaultSelect: ['id', 'type'],
+    });
+
+    // id without type → rejected (discriminator required)
+    const result = p.queryParamsSchema().safeParse({
+      select: 'id',
+      limit: '10',
+    });
+    expect(result.success).toBe(false);
+
+    // id with type → accepted
+    const parsed = p.queryParamsSchema().parse({
+      select: 'id,type',
+      limit: '10',
+    });
+    expect(parsed.pagination.select).toContain('type');
+  });
+
+  /* ---- queryParamsSchema with extra shape ---- */
+
+  it('queryParamsSchema(extra): parses extra fields alongside pagination', () => {
+    const { queryParamsSchema } = makeLimitOffset();
+
+    const extended = queryParamsSchema({
+      search: z.string().optional(),
+    });
+
+    const parsed = extended.parse({ limit: '10', page: '1', search: 'alice' });
+    expect(parsed.pagination.limit).toBe(10);
+    expect(parsed.search).toBe('alice');
+  });
+
+  it('queryParamsSchema(extra): collects errors from both pagination and extra fields', () => {
+    const { queryParamsSchema } = makeLimitOffset();
+
+    const extended = queryParamsSchema({
+      search: z.string().min(3),
+    });
+
+    expect(() =>
+      extended.parse({
+        limit: '999',
+        search: 'ab',
+      }),
+    ).toThrow();
+  });
+
+  /* ---- Malformed date that passes regex but fails Date.parse ---- */
+
+  it('rejects dates that match ISO regex but fail Date.parse', () => {
+    const { queryParamsSchema } = makeLimitOffset();
+
+    const result = queryParamsSchema().safeParse({
+      'filter.createdAt': '$eq:9999-99-99',
+      limit: '10',
+    });
+    expect(result.success).toBe(false);
+  });
+
+  /* ---- all valid operators accepted for a number field ---- */
+
+  it('accepts all valid operators on a number field', () => {
+    const p = paginate({
+      paginationType: 'LIMIT_OFFSET',
+      dataSchema: ModelSchema,
+      selectable: ['id', 'status'],
+      filterable: {
+        id: { type: 'number', ops: ['$eq', '$gt', '$btw'] },
+      },
+      defaultLimit: 10,
+      maxLimit: 50,
+      defaultSelect: ['id'],
+    });
+
+    // $eq with number
+    const parsed = p.queryParamsSchema().parse({
+      'filter.id': '$eq:42',
+      limit: '10',
+    });
+    expect(parsed.pagination.filters).toBeDefined();
+
+    // $gt with number
+    const parsed2 = p.queryParamsSchema().parse({
+      'filter.id': '$gt:10',
+      limit: '10',
+    });
+    expect(parsed2.pagination.filters).toBeDefined();
+
+    // $btw with numbers
+    const parsed3 = p.queryParamsSchema().parse({
+      'filter.id': '$btw:1,100',
+      limit: '10',
+    });
+    expect(parsed3.pagination.filters).toBeDefined();
+  });
+
+  /* ---- Cursor with wrapped schema (optional/nullable/default) ---- */
+
+  it('CURSOR: handles optional-wrapped cursorProperty schema', () => {
+    const WrappedModel = z.object({
+      id: z.number().optional(),
+      name: z.string(),
+    });
+
+    const p = paginate({
+      paginationType: 'CURSOR',
+      dataSchema: WrappedModel,
+      cursorProperty: 'id',
+      selectable: ['id', 'name'],
+      defaultLimit: 10,
+      maxLimit: 50,
+      defaultSelect: ['id'],
+    });
+
+    const parsed = p.queryParamsSchema().parse({ cursor: '42', limit: '10' });
+    expect(parsed.pagination.cursor).toBe(42);
+  });
+});

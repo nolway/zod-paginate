@@ -1,20 +1,25 @@
 # zod-paginate
 
+![Coverage](https://img.shields.io/badge/coverage-94.26%25-brightgreen)
+
 A small utility to **parse and validate pagination + select + sort + filters** from querystring-like objects using **Zod v4**, and to generate a **response validator** that automatically projects your `dataSchema` based on the requested `select`.
 
 It is designed for Node.js HTTP stacks where query parameters arrive as strings (or string arrays). It outputs a **typed, normalized** structure you can map to your ORM/query builder.
 
-- Supports **LIMIT/OFFSET pagination** (`limit` + `page`).
-- Supports **CURSOR pagination** with cursor coercion based on `cursorProperty` (number / string / ISO date string).
-- Supports **field projection** using `select`, including wildcard expansion (`*`) when enabled.
-- Supports **sorting** with an allowlist of sortable fields.
-- Supports a **filter DSL** with `$` operators and **nested AND/OR grouping**.
-- Provides a **response validator** (`validatorSchema` / `responseSchema`) to validate API responses against the projected schema. `z.infer<typeof responseSchema>` gives you **key autocompletion** narrowed to configured `selectable` paths.
-- Also exports a lightweight **`select()`** utility for field-projection-only use cases.
-- Compatible with **OpenAPI tooling** ([zod-openapi](https://github.com/samchungy/zod-openapi) etc.).
-
 > This library does **not** bind DB queries automatically.
 > It gives you a safe parsed structure; you decide how to map it to your data layer.
+
+### Features
+
+- **Field projection** using `select`, including wildcard expansion (`*`).
+- **LIMIT/OFFSET pagination** (`limit` + `page`).
+- **CURSOR pagination** with cursor coercion based on `cursorProperty` (number / string / ISO date string).
+- **Sorting** with an allowlist of sortable fields.
+- **Filter DSL** with `$` operators and **nested AND/OR grouping**.
+- **Response validation** — `responseSchema` is a generic schema covering all possible responses based on your config; `validatorSchema(parsed)` validates outgoing data projected to the actual requested `select`. `z.infer<typeof responseSchema>` gives you **key autocompletion** narrowed to configured `selectable` paths.
+- **Discriminated union support** — `z.discriminatedUnion()` and `z.union()` as `dataSchema`, with compile-time and runtime discriminator enforcement.
+- **Standalone `select()`** utility for field-projection-only use cases.
+- Compatible with **OpenAPI tooling** ([zod-openapi](https://github.com/samchungy/zod-openapi) etc.).
 
 ## Installation
 
@@ -27,6 +32,41 @@ yarn add zod-paginate
 ```
 
 ## Quick start
+
+### Field projection with `select()`
+
+```ts
+import { z } from "zod";
+import { select } from "zod-paginate";
+
+const ProductSchema = z.object({
+  id: z.number(),
+  name: z.string(),
+  price: z.number(),
+});
+
+const { queryParamsSchema, validatorSchema, responseSchema } = select({
+  dataSchema: ProductSchema,
+  selectable: ["id", "name", "price"],
+  defaultSelect: ["id", "name"],
+});
+
+const parsed = queryParamsSchema().parse({ select: "id,name,price" });
+// parsed.select → ["id", "name", "price"]
+
+// Generic response schema — valid for all possible responses based on config
+responseSchema.parse({
+  data: [{ id: 1, name: "Widget" }],
+});
+
+// Outgoing data validator — projected to the actual requested select
+const contextSchema = validatorSchema(parsed);
+contextSchema.parse({
+  data: [{ id: 1, name: "Widget", price: 9.99 }],
+});
+```
+
+### Full pagination with `paginate()`
 
 ```ts
 import { z } from "zod";
@@ -60,7 +100,6 @@ const { queryParamsSchema, validatorSchema, responseSchema } = paginate({
   defaultSelect: '*',
 });
 
-// Example querystring-like input
 const parsed = queryParamsSchema().parse({
   limit: "10",
   page: "2",
@@ -71,601 +110,65 @@ const parsed = queryParamsSchema().parse({
 
 console.log(parsed.pagination);
 
-// Pre-built response validator (uses defaultSelect)
-// z.infer<typeof responseSchema> narrows data keys to selectable paths
+// Generic response schema — valid for all possible responses based on config
 responseSchema.parse({
   data: [{ id: 1, status: "active", createdAt: new Date(), meta: { score: 42 } }],
   pagination: { itemsPerPage: 20, totalItems: 1, currentPage: 1, totalPages: 1 },
 });
 
-// Or build a context-aware validator from the parsed request
+// Outgoing data validator — projected to the actual requested select
 const contextSchema = validatorSchema(parsed.pagination);
-```
-
-## Adapters
-
-`zod-paginate` is ORM/query-builder agnostic by design — it parses and validates query parameters but does not generate database queries. **Adapters** bridge the gap between the parsed output and your data layer.
-
-| Adapter | Description | Link |
-|---|---|---|
-| **zod-paginate-drizzle** | Drizzle ORM adapter — automatically maps parsed pagination, filters, sorting, and select to Drizzle queries. | [GitHub](https://github.com/nolway/zod-paginate-drizzle) |
-
-## API
-
-### `paginate(config)`
-
-Returns:
-
-- `queryParamsSchema(extraShape?)`: function returning a Zod schema to parse query objects (strings / string arrays). Call without arguments for the base schema, or pass an extra Zod shape to extend it with additional fields (see [Extending `queryParamsSchema`](#extending-queryparamsschema)).
-- `validatorSchema(parsed?)`: function returning a Zod schema to validate the response payload, projected based on the parsed `select`.
-- `responseSchema`: pre-built `ZodObject` for validating responses using `defaultSelect` (or all selectable fields). Equivalent to calling `validatorSchema()` with no arguments. Being a `ZodObject`, it exposes `.shape`, `.partial()`, etc. and `z.infer<typeof responseSchema>` correctly narrows both `data` keys and pagination metadata.
-
-```ts
-// Overload 1 — LIMIT_OFFSET
-export function paginate<
-  TSchema extends DataSchema,
-  const TSelectable extends readonly AllowedPath<TSchema>[],
->(
-  config: CommonQueryConfigFromSchema<TSchema, TSelectable[number]> & { paginationType: "LIMIT_OFFSET" },
-): PaginateResult<TSchema, TSelectable[number], "LIMIT_OFFSET">;
-
-// Overload 2 — CURSOR
-export function paginate<
-  TSchema extends DataSchema,
-  const TSelectable extends readonly AllowedPath<TSchema>[],
->(
-  config: CommonQueryConfigFromSchema<TSchema, TSelectable[number]> & CursorPaginationConfig<…>,
-): PaginateResult<TSchema, TSelectable[number], "CURSOR">;
-```
-
-#### `PaginateResult<TSchema, TSelectable?, TType?>`
-
-Use `PaginateResult<TSchema, TSelectable, TType>` instead of `ReturnType<typeof paginate>` when you need an explicit return type — it preserves the generics so that `z.infer<typeof responseSchema>` correctly narrows both `data` keys and pagination metadata.
-
-- **`TType`** (`'LIMIT_OFFSET' | 'CURSOR'`): When specified, narrows the response/payload types so you get `totalItems`/`totalPages` (LIMIT_OFFSET) or `cursor` (CURSOR) without manual narrowing. Defaults to the union if omitted.
-
-```ts
-import { paginate, type PaginateResult } from "zod-paginate";
-
-// TSelectable defaults to all paths if omitted, TType defaults to union
-function createPaginator(): PaginateResult<typeof ModelSchema, "id" | "status", "LIMIT_OFFSET"> {
-  return paginate({
-    paginationType: "LIMIT_OFFSET",
-    dataSchema: ModelSchema,
-    selectable: ["id", "status"],
-    /* … */
-  });
-}
-
-// Without TType — pagination is still a union, but data keys are narrowed
-function createPaginatorUnion(): PaginateResult<typeof ModelSchema, "id" | "status"> {
-  return paginate({ dataSchema: ModelSchema, selectable: ["id", "status"], /* … */ });
-}
-```
-
-## Configuration (`paginate({...})`)
-
-| Option | Type | Description |
-|---|---:|---|
-| `paginationType` | `"LIMIT_OFFSET"` \| `"CURSOR"` | Select pagination mode. |
-| `dataSchema` | `z.ZodObject` | Zod schema representing one **data item** returned by your API (used for projection + cursor inference). |
-| `selectable?` | `string[]` (typed paths) | Allowlist of selectable fields (dot paths supported). Enables `select`. |
-| `sortable?` | `string[]` (typed paths) | Allowlist of sortable fields. Enables `sortBy`. |
-| `filterable?` | object | Allowlist of filterable fields and allowed operators + field type. |
-| `defaultSortBy?` | `{ property, direction }[]` | Default sort if `sortBy` missing/empty. |
-| `defaultLimit` | `number` | **Required.** Default limit if `limit` missing. |
-| `maxLimit` | `number` | **Required.** Rejects `limit` values above this. |
-| `defaultSelect` | `field[] \| "*"` | **Required.** Default select if `select` missing. `"*"` expands to `selectable`. |
-| `cursorProperty` | (CURSOR only) typed path | The field used for cursor paging. Cursor type is inferred from `dataSchema` at that path and the query input cursor is coerced accordingly. |
-
-### Extending `queryParamsSchema`
-
-`queryParamsSchema` accepts an optional Zod shape to add extra fields **as sibling properties** of `pagination` in the parsed output:
-
-```ts
-// Without extra — base schema
-const parsed = queryParamsSchema().parse({ limit: "10", page: "1" });
-// parsed.pagination → { type: "LIMIT_OFFSET", limit: 10, page: 1, … }
-
-// With extra — additional fields alongside pagination
-const parsed = queryParamsSchema({
-  search: z.string().optional(),
-  locale: z.enum(["en", "fr"]).default("en"),
-}).parse({ limit: "10", search: "alice", locale: "fr" });
-// parsed.pagination → { type: "LIMIT_OFFSET", limit: 10, … }
-// parsed.search     → "alice"
-// parsed.locale     → "fr"
-```
-
-Extra fields are validated together with pagination — errors from both sides are collected in a single `ZodError`.
-
-This also works with `select()`:
-
-```ts
-const { queryParamsSchema } = select({ … });
-const parsed = queryParamsSchema({ search: z.string().optional() }).parse({
-  select: "id,name",
-  search: "widget",
-});
-// parsed.select → ["id", "name"]
-// parsed.search → "widget"
-```
-
-## Query input shape
-
-`queryParamsSchema()` accepts any record-like input:
-
-```ts
-Record<string, unknown>
-```
-
-Typical querystring parsers produce values like:
-
-- `"10"` (string)
-- `["a", "b"]` (repeated query params)
-- everything else is ignored / treated as undefined
-
-## Query parameters
-
-### `limit`
-
-- Input: string numeric (e.g. `"10"`)
-- Output: number
-- Rules
-  - Must be a numeric string
-  - Must be `<= maxLimit` if configured
-  - Falls back to `defaultLimit` when missing
-
-### `page` (LIMIT_OFFSET only)
-
-- Input: string numeric (e.g. `"2"`)
-- Output: number
-- Rules
-  - Only valid when `paginationType: "LIMIT_OFFSET"`
-  - Forbidden in CURSOR mode
-
-### `cursor` (CURSOR only)
-
-- Input: string (querystring input is always string)
-- Output: `number | string` (coerced)
-- Rules
-  - Only valid when `paginationType: "CURSOR"`
-  - Forbidden in LIMIT_OFFSET mode
-  - If provided, it is coerced based on the Zod type of `cursorProperty` in `dataSchema`:
-    - `z.number()` field → `"123"` becomes `123` (integer-only)
-    - `z.string()` field → `"abc"` stays `"abc"`
-    - `z.date()` field → must be ISO date or ISO datetime, stays a string (`"2022-01-01"` or `"2022-01-01T12:00:00Z"`)
-
-### `sortBy`
-
-- Input: string or string[]
-- Output: `[{ property, direction }]`
-- Rules
-  - Requires `sortable` in config
-  - Format: `field:ASC` or `field:DESC`
-  - Empty items are ignored
-  - If missing (or becomes empty after cleanup), falls back to `defaultSortBy` if configured
-  - Properties are matched against the allowlist (unknown fields are dropped)
-
-### `select`
-
-- Input: string
-- Output: string[] (typed paths)
-- Rules
-  - Requires `selectable` in config
-  - string is split by `,`, trimmed, empty items removed
-  - `*` expands to the configured `selectable` allowlist
-  - If missing, falls back to `defaultSelect` if configured
-  - `select=` (empty) is rejected
-  - Unknown fields are rejected at parse-time (strict allowlist)
-
-## Filters
-
-Filters are passed as query keys with this pattern:
-
-```txt
-filter.<field>=<dsl>
-```
-
-Where `<field>` is a dot-path field (example: `meta.score`).
-
-You configure which fields are filterable and which operators are allowed via `filterable`.
-
-### Operators
-
-| Operator | Meaning | Value format |
-|---|---|---|
-| `$eq` | equals | number / string / ISO date depending on field type |
-| `$null` | is null | no value |
-| `$in` | in list | `a,b,c` (comma-separated) |
-| `$contains` | contains values | `a,b,c` (comma-separated) |
-| `$gt` | greater than | number or ISO date |
-| `$gte` | greater than or equal | number or ISO date |
-| `$lt` | less than | number or ISO date |
-| `$lte` | less than or equal | number or ISO date |
-| `$btw` | between | `a,b` where both are numbers OR both are ISO dates |
-| `$ilike` | case-insensitive contains (string) | string |
-| `$sw` | starts with (string) | string |
-
-#### `$eq` — equals
-
-Matches rows where the field is exactly equal to the given value. The value type must match the field type (number, string, or ISO date).
-
-```txt
-filter.status=$eq:active
-filter.id=$eq:42
-filter.createdAt=$eq:2025-01-15
-```
-
-#### `$null` — is null
-
-Matches rows where the field is `NULL`. No value is required after the operator.
-
-```txt
-filter.deletedAt=$null
-```
-
-To match rows where the field is **not** null, combine with `$not`:
-
-```txt
-filter.deletedAt=$not:$null
-```
-
-#### `$in` — in list
-
-Matches rows where the field value is one of the provided comma-separated values.
-
-```txt
-filter.status=$in:active,pending,review
-filter.id=$in:1,2,3,10
-```
-
-#### `$contains` — contains values
-
-Matches rows where the field (typically an array column) contains all the provided comma-separated values.
-
-```txt
-filter.tags=$contains:typescript,zod
-filter.roles=$contains:admin
-```
-
-#### `$gt` / `$gte` / `$lt` / `$lte` — comparisons
-
-Standard comparison operators: greater than, greater than or equal, less than, less than or equal. Works with numbers and ISO dates.
-
-```txt
-filter.id=$gt:100
-filter.id=$lte:500
-filter.createdAt=$gte:2025-01-01
-filter.createdAt=$lt:2025-06-01T00:00:00Z
-```
-
-Combine multiple comparisons to build ranges:
-
-```txt
-filter.id=$gt:10&filter.id=$lt:100
-```
-
-#### `$btw` — between
-
-Matches rows where the field value falls between two bounds (inclusive). Both bounds must be the same type — either both numbers or both ISO dates.
-
-```txt
-filter.id=$btw:10,100
-filter.createdAt=$btw:2025-01-01,2025-12-31
-filter.createdAt=$btw:2025-01-01T00:00:00Z,2025-06-30T23:59:59Z
-```
-
-#### `$ilike` — case-insensitive contains
-
-Matches rows where the string field contains the given substring, ignoring case. Useful for search-style filtering.
-
-```txt
-filter.status=$ilike:act
-filter.name=$ilike:john
-filter.email=$ilike:@example.com
-```
-
-#### `$sw` — starts with
-
-Matches rows where the string field starts with the given prefix.
-
-```txt
-filter.name=$sw:Jon
-filter.email=$sw:admin@
-filter.path=$sw:/api/v2
-```
-
-Runtime validation enforces:
-
-1) field allowlist (`filterable`)
-2) operator allowlist per field (`ops`)
-3) value type compatibility (number vs date vs string)
-
-### Default operator: `$eq`
-
-If the filter does **not** start with `$`, it is interpreted as `$eq:<value>`.
-
-### Negation: `$not`
-
-Prefix any operator with `$not:` to negate the condition.
-
-Examples:
-
-```txt
-filter.createdAt=$not:$null
-filter.status=$not:$eq:active
-```
-
-### Multiple conditions for the same field
-
-Use repeated query params:
-
-```txt
-filter.id=$gt:10&filter.id=$lt:100
-```
-
-Or in object form:
-
-```ts
-{
-  "filter.id": ["$gt:10", "$lt:100"]
-}
-```
-
-## Groups
-
-Groups let you build nested AND/OR boolean logic.
-
-There are two layers:
-
-1) Combine multiple conditions inside the same group
-2) Build a group tree (attach groups as children of other groups)
-
-### Put a condition into a group: `$g:<id>`
-
-Prefix any filter DSL with:
-
-```txt
-$g:<groupId>:
-```
-
-### Combine conditions inside a group: `$and` / `$or`
-
-Within a group, the **first** condition cannot have `$and`/`$or`. All following conditions may be prefixed with `$and` or `$or`.
-
-### Group tree definitions: `group.<id>.*`
-
-To nest groups, define these query keys:
-
-- `group.<id>.parent` — parent group id (integer string)
-- `group.<id>.join` — how this group is joined to its parent (`$and` or `$or`)
-- `group.<id>.op` — default join used when combining this group's children (optional)
-
-Rules:
-
-- Root group id is always `"0"`.
-- `group.0.parent` and `group.0.join` are forbidden.
-- Cycles are rejected.
-- Child groups are resolved in numeric order (deterministic).
-
-## Validating responses with `validatorSchema()`
-
-`validatorSchema(parsed)` returns a Zod schema you can use to validate your API response.
-
-What it does:
-
-- Uses the effective `select` (explicit `select`, else `defaultSelect`, else full schema) to project the item schema.
-- Validates cursor type (CURSOR mode) based on `cursorProperty`.
-- Enforces mode-specific pagination metadata shape.
-
-### What `validatorSchema(parsed)` expects
-
-**LIMIT/OFFSET mode**:
-
-```ts
-{
-  data: Array<ProjectedItem>,
-  pagination: {
-    itemsPerPage: number,
-    totalItems: number,
-    currentPage: number,
-    totalPages: number,
-    sortBy?: Array<{ property: string, direction: "ASC" | "DESC" }>,
-    filter?: WhereNode
-  }
-}
-```
-
-**CURSOR mode**:
-
-```ts
-{
-  data: Array<ProjectedItem>,
-  pagination: {
-    itemsPerPage: number,
-    cursor: number | string | Date,
-    sortBy?: Array<{ property: string, direction: "ASC" | "DESC" }>,
-    filter?: WhereNode
-  }
-}
-```
-
-Notes:
-
-- `ProjectedItem` is computed from `dataSchema` + the effective `select`.
-- If `cursorProperty` points to a `z.number()` field, `pagination.cursor` must be a number.
-- If `cursorProperty` points to a `z.string()` field, `pagination.cursor` must be a string.
-- If `cursorProperty` points to a `z.date()` field, this library accepts an ISO string or a `Date` (depending on implementation).
-
-You can call `validatorSchema()` without arguments to build a validator based on defaults (`defaultSelect`, `cursorProperty`, etc.).
-
-## End-to-end examples
-
-### Example 1 — LIMIT/OFFSET
-
-HTTP query:
-
-```txt
-?limit=20&page=1&select=id,status,createdAt&sortBy=createdAt:DESC&filter.status=$ilike:act&filter.id=$gt:10
-```
-
-Parsing:
-
-```ts
-const parsed = queryParamsSchema().parse({
-  limit: "20",
-  page: "1",
-  select: "id,status,createdAt",
-  sortBy: "createdAt:DESC",
-  "filter.status": "$ilike:act",
-  "filter.id": "$gt:10",
-});
-
-// parsed.pagination
-// {
-//   type: "LIMIT_OFFSET",
-//   limit: 20,
-//   page: 1,
-//   select: ["id", "status", "createdAt"],
-//   sortBy: [{ property: "createdAt", direction: "DESC" }],
-//   filters: { type: "and", items: [...] } // WhereNode AST
-// }
-```
-
-### Example 2 — CURSOR + coercion
-
-Config:
-
-```ts
-const { queryParamsSchema } = paginate({
-  paginationType: "CURSOR",
-  dataSchema: ModelSchema,
-  cursorProperty: "id", // id is z.number()
-  selectable: ["id", "status", "createdAt"],
-  defaultSelect: ["id", "createdAt"],
-});
-```
-
-Parsing:
-
-```ts
-const parsed = queryParamsSchema().parse({ cursor: "123", limit: "10" });
-
-// parsed.pagination
-// {
-//   type: "CURSOR",
-//   limit: 10,
-//   cursor: 123,            // <- coerced from "123" because cursorProperty is a number
-//   cursorProperty: "id",
-//   select: ["id", "createdAt"]
-// }
-```
-
-### Example 3 — groups
-
-Goal: `(status == active OR status == postponed) AND (id > 10)`
-
-```ts
-const parsed = queryParamsSchema().parse({
-  "filter.status": ["$g:1:$eq:active", "$g:1:$or:$eq:postponed"],
-  "filter.id": "$g:2:$gt:10",
-
-  "group.1.parent": "0",
-  "group.2.parent": "0",
-  "group.2.join": "$and",
-});
-
-// parsed.pagination.filters
-// {
-//   type: "and",
-//   items: [
-//     { type: "or", items: [ ...status filters... ] },
-//     { type: "filter", field: "id", condition: { op: "$gt", value: 10, ... } }
-//   ]
-// }
-```
-
-### Example 4 — validating your response
-
-Using the pre-built `responseSchema` (based on `defaultSelect`):
-
-```ts
-const { responseSchema } = paginate({
-  paginationType: "LIMIT_OFFSET",
-  dataSchema: ModelSchema,
-  selectable: ["id", "status", "createdAt", "meta.score"],
-  defaultSelect: '*',
-  defaultLimit: 20,
-  maxLimit: 100,
-});
-
-// Validate without parsing a request first
-responseSchema.parse({
-  data: [{ id: 1, status: "active", createdAt: new Date(), meta: { score: 42 } }],
-  pagination: { itemsPerPage: 20, totalItems: 1, currentPage: 1, totalPages: 1 },
-});
-
-// Type-safe: z.infer narrows data keys to selectable paths
-type Response = z.infer<typeof responseSchema>;
-// Response["data"][0] → { id?: unknown; status?: unknown; createdAt?: unknown; meta?: unknown }
-// Response["pagination"] → LimitOffsetPaginationResponseMeta (not a union!)
-// Response["pagination"].totalItems → number  ✓ (no manual narrowing needed)
-```
-
-Or using `validatorSchema(parsed)` for request-aware projection:
-
-```ts
-const parsed = queryParamsSchema().parse({ select: "id,status", limit: "10", page: "1" });
-const contextSchema = validatorSchema(parsed.pagination);
-
-// contextSchema expects data items shaped like { id, status } only
 contextSchema.parse({
   data: [{ id: 1, status: "active" }],
   pagination: { itemsPerPage: 10, totalItems: 1, currentPage: 1, totalPages: 1 },
 });
 ```
 
-## `select()` — standalone field projection
+## Summary
 
-If you only need **field projection** without pagination, sorting, or filters, you can use the `select()` utility directly.
+- [select() API](#select)
+  - [SelectConfig](#selectconfig)
+  - [responseType: 'one'](#responsetype-one)
+- [paginate() API](#paginate)
+  - [PaginateConfig](#paginateconfig)
+  - [PaginateResult](#paginateresulttschema-tselectable-ttype)
+- [Query parameters](#query-parameters)
+  - [limit](#limit) · [page](#page-limit_offset-only) · [cursor](#cursor-cursor-only) · [sortBy](#sortby) · [select](#select-1)
+- [Response validation](#response-validation)
+- [Filters](#filters)
+  - [Operators](#operators) · [Negation](#negation-not) · [Multiple conditions](#multiple-conditions-for-the-same-field)
+- [Filter groups](#filter-groups)
+- [Discriminated unions](#discriminated-unions)
+  - [Compile-time enforcement](#compile-time-enforcement-on-selectable) · [Runtime enforcement](#runtime-rejection-of-explicit-select-without-discriminator) · [Union-preserving validation](#union-preserving-response-validation)
+- [Extending queryParamsSchema](#extending-queryparamsschema)
+- [End-to-end examples](#end-to-end-examples)
+- [TypeScript reference](#typescript-reference)
+- [Adapters](#adapters)
 
-### API
+## `select()`
+
+Standalone **field projection** utility. Use it when you only need to parse a `select` query parameter and validate the response — no pagination, sorting, or filters.
 
 ```ts
 import { select } from "zod-paginate";
-
-export function select<
-  TSchema extends DataSchema,
-  const TSelectable extends readonly AllowedPath<TSchema>[],
->(
-  config: SelectConfig<TSchema, TSelectable[number]>,
-): SelectResult<TSchema, TSelectable[number]>;
 ```
 
 Returns:
 
-- `queryParamsSchema(extraShape?)`: function returning a Zod schema to parse `{ select: "id,name" }` into `{ select: ["id", "name"] }`. Call without arguments for the base schema, or pass an extra Zod shape to extend it (see [Extending `queryParamsSchema`](#extending-queryparamsschema)).
-- `validatorSchema(parsed?)`: function returning a Zod schema expecting `{ data: Array<ProjectedItem> }`.
-- `responseSchema`: pre-built `ZodObject` for validating responses using `defaultSelect` (or all selectable fields). `z.infer<typeof responseSchema>` narrows data keys to the configured `selectable` paths.
+| Property | Description |
+|---|---|
+| `queryParamsSchema(extraShape?)` | Zod schema to parse `{ select: "id,name" }` into `{ select: ["id", "name"] }`. |
+| `validatorSchema(parsed?)` | Validates outgoing data projected to the actual requested `select`. Shape: `{ data: ProjectedItem[] }` (or `{ data: ProjectedItem }` when `responseType: 'one'`). |
+| `responseSchema` | Generic `ZodObject` covering all possible responses based on your config. `z.infer<typeof responseSchema>` narrows data keys to `selectable` paths. |
 
-Use `SelectResult<TSchema, TSelectable>` instead of `ReturnType<typeof select>` for explicit return types:
-
-```ts
-import { select, type SelectResult } from "zod-paginate";
-
-function createSelector(): SelectResult<typeof ProductSchema, "id" | "name" | "price"> {
-  return select({ dataSchema: ProductSchema, selectable: ["id", "name", "price"], /* … */ });
-}
-```
-
-#### `SelectConfig`
+### `SelectConfig`
 
 | Option | Type | Description |
 |---|---:|---|
-| `dataSchema` | `z.ZodObject` | Zod schema representing one data item. |
+| `dataSchema` | `z.ZodObject` \| `z.ZodDiscriminatedUnion` \| `z.ZodUnion` | Zod schema representing one data item. |
 | `selectable` | `string[]` (typed paths) | Allowlist of selectable fields (dot paths supported). |
-| `defaultSelect` | `field[] \| "*"` | **Required.** Default select if `select` is missing. `"*"` expands to `selectable`. |
+| `defaultSelect` | `field[] \| "*"` | **Required.** Default when `select` is missing. `"*"` expands to `selectable`. |
+| `responseType` | `"many" \| "one"` | Shape of `data` in the response (default: `"many"`). |
 
 #### Example
 
@@ -693,16 +196,16 @@ const { queryParamsSchema, validatorSchema, responseSchema } = select({
 const parsed = queryParamsSchema().parse({ select: "*" });
 // parsed.select → ["id", "name", "price", "details.weight", "details.color"]
 
-// With specific fields
+// Specific fields
 const parsed2 = queryParamsSchema().parse({ select: "id,name,details.color" });
 // parsed2.select → ["id", "name", "details.color"]
 
-// Pre-built response validator (based on defaultSelect)
+// Generic response schema (based on defaultSelect)
 responseSchema.parse({
   data: [{ id: 1, name: "Widget", price: 9.99 }],
 });
 
-// Or context-aware validator from parsed request
+// Outgoing data validator projected to the actual requested select
 const contextSchema = validatorSchema(parsed2);
 contextSchema.parse({
   data: [
@@ -716,3 +219,560 @@ const parsed3 = queryParamsSchema().parse({});
 // parsed3.select → ["id", "name", "price"]
 ```
 
+Use `SelectResult<TSchema, TSelectable>` instead of `ReturnType<typeof select>` for explicit return types:
+
+```ts
+import { select, type SelectResult } from "zod-paginate";
+
+function createSelector(): SelectResult<typeof ProductSchema, "id" | "name" | "price"> {
+  return select({ dataSchema: ProductSchema, selectable: ["id", "name", "price"], /* … */ });
+}
+```
+
+### `responseType: 'one'`
+
+By default, `select()` validates `data` as an array. Pass `responseType: 'one'` to validate a single item instead:
+
+```ts
+const { responseSchema } = select({
+  dataSchema: ProductSchema,
+  selectable: ["id", "name", "price"],
+  defaultSelect: ["id", "name"],
+  responseType: "one",
+});
+
+// Single object → valid
+responseSchema.parse({ data: { id: 1, name: "Widget" } });
+
+// Array → rejected
+responseSchema.parse({ data: [{ id: 1 }] }); // throws
+```
+
+## `paginate()`
+
+Full pagination, sorting, filtering, and field projection. Extends everything `select()` does with pagination support.
+
+```ts
+import { paginate } from "zod-paginate";
+```
+
+Returns:
+
+| Property | Description |
+|---|---|
+| `queryParamsSchema(extraShape?)` | Zod schema to parse query objects (strings / string arrays). |
+| `validatorSchema(parsed?)` | Validates outgoing data projected to the actual requested `select`. |
+| `responseSchema` | Generic `ZodObject` covering all possible responses based on your config. `z.infer<typeof responseSchema>` narrows both data keys and pagination metadata. |
+
+### `PaginateConfig`
+
+| Option | Type | Description |
+|---|---:|---|
+| `paginationType` | `"LIMIT_OFFSET"` \| `"CURSOR"` | Pagination mode. |
+| `dataSchema` | `z.ZodObject` \| `z.ZodDiscriminatedUnion` \| `z.ZodUnion` | Zod schema for one data item (used for projection + cursor inference). |
+| `selectable?` | `string[]` (typed paths) | Allowlist of selectable fields (dot paths). Enables `select`. |
+| `sortable?` | `string[]` (typed paths) | Allowlist of sortable fields. Enables `sortBy`. |
+| `filterable?` | object | Allowlist of filterable fields and allowed operators + field type. |
+| `defaultSortBy?` | `{ property, direction }[]` | Default sort if `sortBy` missing/empty. |
+| `defaultLimit` | `number` | **Required.** Default limit if `limit` missing. |
+| `maxLimit` | `number` | **Required.** Rejects `limit` values above this. |
+| `defaultSelect` | `field[] \| "*"` | **Required.** Default select if `select` missing. `"*"` expands to `selectable`. |
+| `cursorProperty` | (CURSOR only) typed path | Field used for cursor paging. Cursor type is inferred from `dataSchema`. |
+
+### `PaginateResult<TSchema, TSelectable?, TType?>`
+
+Use `PaginateResult<TSchema, TSelectable, TType>` instead of `ReturnType<typeof paginate>` when you need an explicit return type — it preserves the generics so that `z.infer<typeof responseSchema>` correctly narrows both data keys and pagination metadata.
+
+**`TType`** (`'LIMIT_OFFSET' | 'CURSOR'`): When specified, narrows the response types so you get `totalItems`/`totalPages` (LIMIT_OFFSET) or `cursor` (CURSOR) without manual narrowing.
+
+```ts
+import { paginate, type PaginateResult } from "zod-paginate";
+
+function createPaginator(): PaginateResult<typeof ModelSchema, "id" | "status", "LIMIT_OFFSET"> {
+  return paginate({
+    paginationType: "LIMIT_OFFSET",
+    dataSchema: ModelSchema,
+    selectable: ["id", "status"],
+    /* … */
+  });
+}
+
+// Without TType — pagination metadata is a union, but data keys are still narrowed
+function createPaginatorUnion(): PaginateResult<typeof ModelSchema, "id" | "status"> {
+  return paginate({ dataSchema: ModelSchema, selectable: ["id", "status"], /* … */ });
+}
+```
+
+## Query parameters
+
+`queryParamsSchema()` accepts any `Record<string, unknown>` input. Typical querystring parsers produce `"10"` (string) or `["a", "b"]` (repeated params).
+
+### `limit`
+
+- **Input:** string numeric (e.g. `"10"`)
+- **Output:** number
+- Must be `<= maxLimit`; falls back to `defaultLimit` when missing.
+
+### `page` (LIMIT_OFFSET only)
+
+- **Input:** string numeric (e.g. `"2"`)
+- **Output:** number
+- Only valid when `paginationType: "LIMIT_OFFSET"`. Forbidden in CURSOR mode.
+
+### `cursor` (CURSOR only)
+
+- **Input:** string
+- **Output:** `number | string` (coerced)
+- Coerced based on the Zod type of `cursorProperty` in `dataSchema`:
+
+| `cursorProperty` type | Input | Output |
+|---|---|---|
+| `z.number()` | `"123"` | `123` (integer) |
+| `z.string()` | `"abc"` | `"abc"` |
+| `z.date()` | `"2022-01-01"` | `"2022-01-01"` (ISO string) |
+
+### `sortBy`
+
+- **Input:** string or string[] — format: `field:ASC` or `field:DESC`
+- **Output:** `[{ property, direction }]`
+- Properties are matched against the `sortable` allowlist (unknown fields are dropped).
+- Falls back to `defaultSortBy` when missing.
+
+### `select`
+
+- **Input:** comma-separated string (e.g. `"id,name,meta.score"`)
+- **Output:** string[] (typed paths)
+- `*` expands to the `selectable` allowlist.
+- Falls back to `defaultSelect` when missing.
+- `select=` (empty) is rejected. Unknown fields are rejected (strict allowlist).
+
+## Response validation
+
+Both `select()` and `paginate()` return tools to validate your API response.
+
+### `responseSchema` — generic response schema
+
+Covers all possible responses based on your config (uses `defaultSelect` or all selectable fields). Ideal for OpenAPI schema generation, static validation, or type inference:
+
+```ts
+const { responseSchema } = paginate({
+  paginationType: "LIMIT_OFFSET",
+  dataSchema: ModelSchema,
+  selectable: ["id", "status", "createdAt", "meta.score"],
+  defaultSelect: '*',
+  defaultLimit: 20,
+  maxLimit: 100,
+});
+
+responseSchema.parse({
+  data: [{ id: 1, status: "active", createdAt: new Date(), meta: { score: 42 } }],
+  pagination: { itemsPerPage: 20, totalItems: 1, currentPage: 1, totalPages: 1 },
+});
+
+// Type-safe: z.infer narrows data keys to selectable paths
+type Response = z.infer<typeof responseSchema>;
+// Response["data"][0] → { id?: unknown; status?: unknown; createdAt?: unknown; meta?: unknown }
+// Response["pagination"].totalItems → number  ✓ (no manual narrowing)
+```
+
+### `validatorSchema(parsed?)` — outgoing data validator
+
+Validates outgoing data projected to the actual `select` requested by the client:
+
+```ts
+const parsed = queryParamsSchema().parse({ select: "id,status", limit: "10", page: "1" });
+const contextSchema = validatorSchema(parsed.pagination);
+
+contextSchema.parse({
+  data: [{ id: 1, status: "active" }],
+  pagination: { itemsPerPage: 10, totalItems: 1, currentPage: 1, totalPages: 1 },
+});
+```
+
+### Expected response shape
+
+**LIMIT/OFFSET:**
+
+```ts
+{
+  data: Array<ProjectedItem>,
+  pagination: {
+    itemsPerPage: number,
+    totalItems: number,
+    currentPage: number,
+    totalPages: number,
+    sortBy?: Array<{ property: string, direction: "ASC" | "DESC" }>,
+    filter?: WhereNode
+  }
+}
+```
+
+**CURSOR:**
+
+```ts
+{
+  data: Array<ProjectedItem>,
+  pagination: {
+    itemsPerPage: number,
+    cursor: number | string | Date,
+    sortBy?: Array<{ property: string, direction: "ASC" | "DESC" }>,
+    filter?: WhereNode
+  }
+}
+```
+
+## Filters
+
+Filters use query keys with the pattern `filter.<field>=<dsl>` where `<field>` is a dot-path (e.g. `meta.score`). Configure which fields and operators are allowed via the `filterable` option.
+
+### Operators
+
+| Operator | Meaning | Value format | Example |
+|---|---|---|---|
+| `$eq` | equals | number / string / ISO date | `filter.status=$eq:active` |
+| `$null` | is null | _(no value)_ | `filter.deletedAt=$null` |
+| `$in` | in list | comma-separated | `filter.status=$in:active,pending` |
+| `$contains` | contains values | comma-separated | `filter.tags=$contains:typescript,zod` |
+| `$gt` | greater than | number or ISO date | `filter.id=$gt:100` |
+| `$gte` | greater than or equal | number or ISO date | `filter.createdAt=$gte:2025-01-01` |
+| `$lt` | less than | number or ISO date | `filter.id=$lt:500` |
+| `$lte` | less than or equal | number or ISO date | `filter.id=$lte:500` |
+| `$btw` | between (inclusive) | `a,b` (same type) | `filter.id=$btw:10,100` |
+| `$ilike` | case-insensitive contains | string | `filter.name=$ilike:john` |
+| `$sw` | starts with | string | `filter.name=$sw:Jon` |
+
+If the filter value does **not** start with `$`, it is interpreted as `$eq:<value>`.
+
+### Negation: `$not`
+
+Prefix any operator with `$not:` to negate the condition:
+
+```txt
+filter.deletedAt=$not:$null
+filter.status=$not:$eq:active
+```
+
+### Multiple conditions for the same field
+
+Use repeated query params or pass an array:
+
+```txt
+filter.id=$gt:10&filter.id=$lt:100
+```
+
+```ts
+{ "filter.id": ["$gt:10", "$lt:100"] }
+```
+
+Runtime validation enforces: field allowlist (`filterable`), operator allowlist per field (`ops`), and value type compatibility.
+
+## Filter groups
+
+Groups let you build nested AND/OR boolean logic.
+
+### Assigning conditions to a group: `$g:<id>`
+
+Prefix any filter DSL with `$g:<groupId>:`:
+
+```txt
+filter.status=$g:1:$eq:active
+```
+
+Within a group, the **first** condition cannot have `$and`/`$or`. Following conditions may be prefixed with `$and` or `$or`.
+
+### Group tree definitions: `group.<id>.*`
+
+Define parent-child relationships between groups:
+
+- `group.<id>.parent` — parent group id (integer string)
+- `group.<id>.join` — how this group joins its parent (`$and` or `$or`)
+- `group.<id>.op` — default join for this group's children (optional)
+
+Rules: root group id is always `"0"`. `group.0.parent` and `group.0.join` are forbidden. Cycles are rejected. Child groups are resolved in numeric order.
+
+**Example:** `(status == active OR status == postponed) AND (id > 10)`
+
+```ts
+const parsed = queryParamsSchema().parse({
+  "filter.status": ["$g:1:$eq:active", "$g:1:$or:$eq:postponed"],
+  "filter.id": "$g:2:$gt:10",
+
+  "group.1.parent": "0",
+  "group.2.parent": "0",
+  "group.2.join": "$and",
+});
+
+// parsed.pagination.filters
+// {
+//   type: "and",
+//   items: [
+//     { type: "or", items: [ ...status filters... ] },
+//     { type: "filter", field: "id", condition: { op: "$gt", value: 10, ... } }
+//   ]
+// }
+```
+
+## Discriminated unions
+
+Both `select()` and `paginate()` accept `z.discriminatedUnion()` (or `z.union()` of objects) as `dataSchema`. The `selectable` paths are typed as the union of all member paths.
+
+```ts
+const Codec1 = z.object({ id: z.number(), name: z.string() });
+const Codec2 = z.object({ id: z.number(), title: z.string() });
+const UnionSchema = z.discriminatedUnion("type", [
+  Codec1.extend({ type: z.literal("codec1") }),
+  Codec2.extend({ type: z.literal("codec2") }),
+]);
+const VideoSchema = z.object({ type: z.literal("video"), id: z.number(), duration: z.number(), codec: UnionSchema });
+const AudioSchema = z.object({ type: z.literal("audio"), id: z.number(), bitrate: z.number() });
+const MediaSchema = z.discriminatedUnion("type", [VideoSchema, AudioSchema]);
+```
+
+### Compile-time enforcement on `selectable`
+
+The discriminator field **must** be present in `selectable`. Omitting it is a TypeScript error:
+
+```ts
+// ✗ Compile error — "type" is missing from selectable
+select({
+  dataSchema: MediaSchema,
+  selectable: ["id", "name"],       // ← TypeScript error
+  defaultSelect: "*",
+});
+
+// ✓ OK — "type" is included
+select({
+  dataSchema: MediaSchema,
+  selectable: ["id", "name", "type"],
+  defaultSelect: "*",
+});
+```
+
+The same applies to `paginate()`:
+
+```ts
+// ✗ Compile error
+paginate({
+  paginationType: "LIMIT_OFFSET",
+  dataSchema: MediaSchema,
+  selectable: ["id", "duration"],   // ← missing "type"
+  defaultSelect: "*",
+  defaultLimit: 20,
+  maxLimit: 100,
+});
+
+// ✓ OK
+paginate({
+  paginationType: "LIMIT_OFFSET",
+  dataSchema: MediaSchema,
+  selectable: ["id", "type", "duration"],
+  defaultSelect: ["id", "type"],
+  defaultLimit: 20,
+  maxLimit: 100,
+});
+```
+
+### Runtime rejection of explicit `select` without discriminator
+
+Even though the type system ensures the discriminator is in `selectable`, a client could still send a `select` query that omits it. This is rejected at runtime:
+
+```ts
+const { queryParamsSchema } = select({
+  dataSchema: MediaSchema,
+  selectable: ["id", "type", "duration", "bitrate"],
+  defaultSelect: ["id", "type"],
+});
+
+// ✗ Missing "type" → validation error
+queryParamsSchema().safeParse({ select: "id,duration" });
+// → 'select must include the discriminator field "type" when using a discriminated union'
+
+// ✓ select=* always works — expands to all selectable fields including the discriminator
+queryParamsSchema().parse({ select: "*" });
+// → ["id", "type", "duration", "bitrate"]
+
+// ✓ Including the discriminator explicitly
+queryParamsSchema().parse({ select: "id,type,duration" });
+// → ["id", "type", "duration"]
+```
+
+### Union-preserving response validation
+
+When using a discriminated union, `validatorSchema` and `responseSchema` preserve the union structure — each option is projected independently. A response item only needs to match **one** of the union options:
+
+```ts
+const { queryParamsSchema, validatorSchema } = select({
+  dataSchema: MediaSchema,
+  selectable: ["id", "type", "duration", "bitrate"],
+  defaultSelect: "*",
+});
+
+const parsed = queryParamsSchema().parse({ select: "id,type,duration,bitrate" });
+const schema = validatorSchema(parsed);
+
+// ✓ Video item — matches VideoSchema option
+schema.parse({ data: [{ id: 1, type: "video", duration: 120 }] });
+
+// ✓ Audio item — matches AudioSchema option
+schema.parse({ data: [{ id: 2, type: "audio", bitrate: 320 }] });
+
+// ✓ Mixed array — each item matches its own option
+schema.parse({
+  data: [
+    { id: 1, type: "video", duration: 120 },
+    { id: 2, type: "audio", bitrate: 320 },
+  ],
+});
+
+// ✗ Invalid — type "video" with bitrate instead of duration
+schema.safeParse({ data: [{ id: 1, type: "video", bitrate: 320 }] });
+// → fails validation
+```
+
+## Extending `queryParamsSchema`
+
+Both `select()` and `paginate()` support extending `queryParamsSchema` with additional fields:
+
+```ts
+// paginate()
+const parsed = queryParamsSchema({
+  search: z.string().optional(),
+  locale: z.enum(["en", "fr"]).default("en"),
+}).parse({ limit: "10", search: "alice", locale: "fr" });
+// parsed.pagination → { type: "LIMIT_OFFSET", limit: 10, … }
+// parsed.search     → "alice"
+// parsed.locale     → "fr"
+
+// select()
+const parsed = queryParamsSchema({ search: z.string().optional() }).parse({
+  select: "id,name",
+  search: "widget",
+});
+// parsed.select → ["id", "name"]
+// parsed.search → "widget"
+```
+
+Extra fields are validated together — errors from both sides are collected in a single `ZodError`.
+
+## End-to-end examples
+
+### LIMIT/OFFSET
+
+```txt
+?limit=20&page=1&select=id,status,createdAt&sortBy=createdAt:DESC&filter.status=$ilike:act&filter.id=$gt:10
+```
+
+```ts
+const parsed = queryParamsSchema().parse({
+  limit: "20",
+  page: "1",
+  select: "id,status,createdAt",
+  sortBy: "createdAt:DESC",
+  "filter.status": "$ilike:act",
+  "filter.id": "$gt:10",
+});
+
+// parsed.pagination
+// {
+//   type: "LIMIT_OFFSET",
+//   limit: 20,
+//   page: 1,
+//   select: ["id", "status", "createdAt"],
+//   sortBy: [{ property: "createdAt", direction: "DESC" }],
+//   filters: { type: "and", items: [...] }
+// }
+```
+
+### CURSOR with coercion
+
+```ts
+const { queryParamsSchema } = paginate({
+  paginationType: "CURSOR",
+  dataSchema: ModelSchema,
+  cursorProperty: "id", // z.number() → cursor is coerced to number
+  selectable: ["id", "status", "createdAt"],
+  defaultSelect: ["id", "createdAt"],
+});
+
+const parsed = queryParamsSchema().parse({ cursor: "123", limit: "10" });
+// parsed.pagination.cursor → 123 (coerced from "123")
+```
+
+### Validating a response
+
+```ts
+const { responseSchema } = paginate({
+  paginationType: "LIMIT_OFFSET",
+  dataSchema: ModelSchema,
+  selectable: ["id", "status", "createdAt", "meta.score"],
+  defaultSelect: '*',
+  defaultLimit: 20,
+  maxLimit: 100,
+});
+
+responseSchema.parse({
+  data: [{ id: 1, status: "active", createdAt: new Date(), meta: { score: 42 } }],
+  pagination: { itemsPerPage: 20, totalItems: 1, currentPage: 1, totalPages: 1 },
+});
+
+type Response = z.infer<typeof responseSchema>;
+// Response["data"][0] → { id?: unknown; status?: unknown; createdAt?: unknown; meta?: unknown }
+// Response["pagination"].totalItems → number  ✓
+```
+
+## TypeScript reference
+
+<details>
+<summary><code>paginate()</code> overloads</summary>
+
+```ts
+// Overload 1 — LIMIT_OFFSET
+export function paginate<
+  TSchema extends DataSchema,
+  const TSelectable extends readonly AllowedPath<TSchema>[],
+>(
+  config: CommonQueryConfigFromSchema<TSchema, TSelectable[number]> & { paginationType: "LIMIT_OFFSET" },
+): PaginateResult<TSchema, TSelectable[number], "LIMIT_OFFSET">;
+
+// Overload 2 — CURSOR
+export function paginate<
+  TSchema extends DataSchema,
+  const TSelectable extends readonly AllowedPath<TSchema>[],
+>(
+  config: CommonQueryConfigFromSchema<TSchema, TSelectable[number]> & CursorPaginationConfig<…>,
+): PaginateResult<TSchema, TSelectable[number], "CURSOR">;
+```
+
+</details>
+
+<details>
+<summary><code>select()</code> signature</summary>
+
+```ts
+export function select<
+  TSchema extends DataSchema,
+  const TSelectable extends readonly AllowedPath<TSchema>[],
+>(
+  config: SelectConfig<TSchema, TSelectable[number]>,
+): SelectResult<TSchema, TSelectable[number]>;
+```
+
+</details>
+
+### Exported types
+
+| Type | Description |
+|---|---|
+| `DataSchema` | `z.ZodObject \| z.ZodDiscriminatedUnion \| z.ZodUnion` |
+| `AllowedPath<TSchema>` | All valid dot-notation paths for a given schema |
+| `SelectConfig<TSchema, TSelectable>` | Configuration for `select()` |
+| `SelectResult<TSchema, TSelectable>` | Return type of `select()` |
+| `PaginateResult<TSchema, TSelectable?, TType?>` | Return type of `paginate()` |
+
+## Adapters
+
+`zod-paginate` is ORM/query-builder agnostic by design. **Adapters** bridge the gap between the parsed output and your data layer.
+
+| Adapter | Description | Link |
+|---|---|---|
+| **zod-paginate-drizzle** | Drizzle ORM adapter — maps parsed pagination, filters, sorting, and select to Drizzle queries. | [GitHub](https://github.com/nolway/zod-paginate-drizzle) |

@@ -51,9 +51,38 @@ export type PathValue<T, P extends string> = P extends `${infer K}.${infer Rest}
 /* Schema types */
 /* ---------------------------------- */
 
-export type DataSchema = z.ZodObject<z.ZodRawShape>;
+export type DataSchema =
+  | z.ZodObject<z.ZodRawShape>
+  | z.ZodDiscriminatedUnion<readonly [z.ZodObject<z.ZodRawShape>, ...z.ZodObject<z.ZodRawShape>[]]>
+  | z.ZodUnion<readonly [z.ZodObject<z.ZodRawShape>, ...z.ZodObject<z.ZodRawShape>[]]>;
 export type InferData<TSchema extends DataSchema> = z.infer<TSchema>;
 export type AllowedPath<TSchema extends DataSchema> = Path<InferData<TSchema>>;
+
+/**
+ * Extract the discriminator key as a string literal from a ZodDiscriminatedUnion.
+ * Returns `never` for plain ZodObject or ZodUnion.
+ */
+export type ExtractDiscriminator<TSchema> =
+  TSchema extends z.ZodDiscriminatedUnion<
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    any[],
+    infer D extends string
+  >
+    ? D
+    : never;
+
+/**
+ * Enforces that `TSelectable` includes the discriminator key when `TSchema` is a `ZodDiscriminatedUnion`.
+ * If the discriminator is missing, evaluates to `never`, causing a compile error.
+ */
+export type EnsureDiscriminatorInSelectable<
+  TSchema extends DataSchema,
+  TSelectable extends readonly string[],
+> = [ExtractDiscriminator<TSchema>] extends [never]
+  ? TSelectable
+  : ExtractDiscriminator<TSchema> extends TSelectable[number]
+    ? TSelectable
+    : never;
 
 /* ---------------------------------- */
 /* Response schema shapes (ZodObject)  */
@@ -63,16 +92,19 @@ export type AllowedPath<TSchema extends DataSchema> = Path<InferData<TSchema>>;
  * Identity mapped type: converts an interface into a type alias with implicit
  * index signatures — required by Zod 4's ZodObject shape constraint.
  */
-type ZodShape<T> = { [K in keyof T]: T[K] };
+export type ZodShape<T> = { [K in keyof T]: T[K] };
 
-interface SelectResponseSchemaShapeDef {
+interface SelectResponseSchemaShapeArrayDef {
   data: z.ZodArray<z.ZodObject<z.ZodRawShape>>;
 }
-export type SelectResponseSchemaShape = ZodShape<SelectResponseSchemaShapeDef>;
+interface SelectResponseSchemaShapeObjectDef {
+  data: z.ZodObject<z.ZodRawShape>;
+}
+export type SelectResponseSchemaShape =
+  | ZodShape<SelectResponseSchemaShapeArrayDef>
+  | ZodShape<SelectResponseSchemaShapeObjectDef>;
 
-/* ---------------------------------- */
-/* Select schema */
-/* ---------------------------------- */
+export type SelectResponseType = 'one' | 'many';
 
 /**
  * Zod schema for the "select" parameter, which can be a comma-separated string.
@@ -98,6 +130,12 @@ export interface SelectableConfig<
 > {
   selectable?: readonly TSelect[];
   defaultSelect: readonly TSelect[] | '*';
+}
+
+/** Untyped version of SelectableConfig for internal use with string arrays. */
+export interface UntypedSelectableConfig {
+  selectable?: readonly string[];
+  defaultSelect: readonly string[] | '*';
 }
 
 /* ---------------------------------- */
@@ -126,13 +164,21 @@ export function expandSelect<
 >(
   select: readonly string[] | undefined,
   config: SelectableConfig<TSchema, TSelect>,
-): readonly TSelect[] | undefined {
+): readonly TSelect[] | undefined;
+export function expandSelect(
+  select: readonly string[] | undefined,
+  config: UntypedSelectableConfig,
+): readonly string[] | undefined;
+export function expandSelect(
+  select: readonly string[] | undefined,
+  config: UntypedSelectableConfig,
+): readonly string[] | undefined {
   if (!select) return undefined;
 
   if (!select.includes('*')) {
     if (!config.selectable || config.selectable.length === 0) return undefined;
 
-    const out: TSelect[] = [];
+    const out: string[] = [];
     for (const field of select) {
       const picked = pickFromAllowlist(config.selectable, field);
       if (picked) out.push(picked);
@@ -147,17 +193,26 @@ export function expandSelect<
 export function computeSelect<
   TSchema extends DataSchema,
   TSelect extends AllowedPath<TSchema> = AllowedPath<TSchema>,
->(select: string[] | undefined, config: SelectableConfig<TSchema, TSelect>): TSelect[] | undefined {
+>(select: string[] | undefined, config: SelectableConfig<TSchema, TSelect>): TSelect[] | undefined;
+export function computeSelect(
+  select: string[] | undefined,
+  config: UntypedSelectableConfig,
+): string[] | undefined;
+export function computeSelect(
+  select: string[] | undefined,
+  config: UntypedSelectableConfig,
+): string[] | undefined {
   if (select) {
     const expanded = expandSelect(select, config);
     if (!expanded) return undefined;
-    return [...expanded];
+    return Array.from(expanded);
   }
 
-  const defaultSelectArr = config.defaultSelect === '*' ? ['*'] : [...config.defaultSelect];
+  const defaultSelectArr: readonly string[] =
+    config.defaultSelect === '*' ? ['*'] : config.defaultSelect;
   const expanded = expandSelect(defaultSelectArr, config);
   if (!expanded) return undefined;
-  return [...expanded];
+  return Array.from(expanded);
 }
 
 /* ---------------------------------- */
@@ -191,14 +246,192 @@ function isZodObjectSchema(v: unknown): v is z.ZodObject<z.ZodRawShape> {
   return isPlainObject(shape);
 }
 
+/** Duck-typed check for union schemas (ZodUnion / ZodDiscriminatedUnion). */
+function isZodUnionSchema(v: unknown): v is { options: z.ZodObject<z.ZodRawShape>[] } & z.ZodType {
+  if (!isPlainObject(v)) return false;
+  const options = getOwnProp(v, 'options');
+  return Array.isArray(options) && options.length > 0 && isZodObjectSchema(options[0]);
+}
+
+/**
+ * Extract the discriminator key from a `z.discriminatedUnion()`.
+ * Returns `undefined` for plain `z.union()` or `z.object()`.
+ */
+export function getDiscriminatorKey(schema: DataSchema): string | undefined {
+  if (!isPlainObject(schema)) return undefined;
+  const def = getOwnProp(schema, '_def');
+  if (!isPlainObject(def)) return undefined;
+  const disc = getOwnProp(def, 'discriminator');
+  return typeof disc === 'string' ? disc : undefined;
+}
+
+/** Same as getDiscriminatorKey but accepts any value (for recursive schema walking). */
+function getDiscriminatorKeyFromAny(schema: unknown): string | undefined {
+  if (!isPlainObject(schema)) return undefined;
+  const def = getOwnProp(schema, '_def');
+  if (!isPlainObject(def)) return undefined;
+  const disc = getOwnProp(def, 'discriminator');
+  return typeof disc === 'string' ? disc : undefined;
+}
+
+/** Duck-typed check for union-like schemas on any value. */
+function isUnionLike(v: unknown): v is { options: unknown[] } {
+  if (!isPlainObject(v)) return false;
+  const options = getOwnProp(v, 'options');
+  return Array.isArray(options) && options.length > 0;
+}
+
+export interface NestedDiscriminator {
+  prefix: string;
+  discriminatorPath: string;
+}
+
+/**
+ * Recursively find all nested `z.discriminatedUnion()` schemas within a DataSchema.
+ * Returns an array of `{ prefix, discriminatorPath }` for each nested discriminated union.
+ * For example, if `codec` is a `z.discriminatedUnion("type", ...)`, returns
+ * `[{ prefix: "codec", discriminatorPath: "codec.type" }]`.
+ */
+export function findNestedDiscriminators(schema: DataSchema): NestedDiscriminator[] {
+  const results: NestedDiscriminator[] = [];
+
+  function walkObject(obj: unknown, prefix: string): void {
+    if (!isZodObjectSchema(obj)) return;
+    const shape = obj.shape;
+    for (const [key, value] of Object.entries(shape)) {
+      if (!isZodSchema(value)) continue;
+      const fullPath = prefix ? `${prefix}.${key}` : key;
+      const disc = getDiscriminatorKeyFromAny(value);
+      if (disc) {
+        results.push({ prefix: fullPath, discriminatorPath: `${fullPath}.${disc}` });
+        // Recurse into each option of this nested union
+        if (isUnionLike(value)) {
+          for (const option of value.options) {
+            walkObject(option, fullPath);
+          }
+        }
+      } else if (isZodObjectSchema(value)) {
+        walkObject(value, fullPath);
+      }
+    }
+  }
+
+  if (isZodObjectSchema(schema)) {
+    walkObject(schema, '');
+  } else if (isZodUnionSchema(schema)) {
+    for (const option of schema.options) {
+      walkObject(option, '');
+    }
+  }
+
+  return results;
+}
+
+/**
+ * If the schema is a ZodObject, return it directly.
+ * If the schema is a ZodUnion / ZodDiscriminatedUnion whose options are ZodObjects,
+ * merge all option shapes into a single ZodObject (first-seen key wins).
+ */
+export function resolveToZodObject(schema: DataSchema): z.ZodObject<z.ZodRawShape> {
+  if (isZodObjectSchema(schema)) return schema;
+
+  if (isZodUnionSchema(schema)) {
+    const mergedShape: Record<string, z.ZodType> = {};
+    for (const option of schema.options) {
+      const shape = option.shape;
+      for (const [key, value] of Object.entries(shape)) {
+        if (!(key in mergedShape) && isZodSchema(value)) {
+          mergedShape[key] = value;
+        }
+      }
+    }
+    return z.object(mergedShape);
+  }
+
+  throw new Error(
+    'dataSchema must be a ZodObject or a ZodUnion/ZodDiscriminatedUnion of ZodObjects',
+  );
+}
+
 function getObjectShape(obj: z.ZodObject<z.ZodRawShape>): Readonly<Record<string, unknown>> {
   return obj.shape;
 }
 
-export function getZodAtPath(obj: z.ZodObject<z.ZodRawShape>, path: string): z.ZodType {
+/** Check whether a dot-path resolves successfully inside a single ZodObject. */
+function hasPathInObject(obj: z.ZodObject<z.ZodRawShape>, path: string): boolean {
+  const parts = path.split('.').filter(Boolean);
+  let current: unknown = obj;
+  for (const p of parts) {
+    if (!isZodObjectSchema(current)) return false;
+    const shape = getObjectShape(current);
+    const next = shape[p];
+    if (!next || !isZodSchema(next)) return false;
+    current = next;
+  }
+  return true;
+}
+
+/**
+ * Recursively apply `.optional()` to all properties of a ZodObject,
+ * descending into nested ZodObject shapes.
+ */
+function deepPartial(schema: z.ZodObject<z.ZodRawShape>): z.ZodObject<z.ZodRawShape> {
+  const shape: MutableShape = {};
+  for (const [key, value] of Object.entries(schema.shape)) {
+    if (!isZodSchema(value)) continue;
+    if (isZodObjectSchema(value)) {
+      shape[key] = deepPartial(value).optional();
+    } else {
+      shape[key] = value.optional();
+    }
+  }
+  return z.object(shape);
+}
+
+/**
+ * Project a DataSchema preserving the union structure.
+ * - ZodObject → delegates to `projectDataSchema`.
+ * - ZodUnion / ZodDiscriminatedUnion → projects each option independently
+ *   (paths that don't exist in a given option are skipped) and returns `z.union([...])`.
+ *
+ * When `partial` is true, a recursive deep partial is applied to each projected option
+ * **before** wrapping in the union, so you get
+ * `z.union([deepPartial(OptionA), deepPartial(OptionB)])` instead of a single merged partial.
+ */
+export function projectDataSchemaPreservingUnion(
+  dataSchema: DataSchema,
+  selectedPaths: string[],
+  options?: { partial?: boolean },
+): z.ZodType {
+  if (isZodObjectSchema(dataSchema)) {
+    const projected = projectDataSchema(dataSchema, selectedPaths);
+    return options?.partial ? deepPartial(projected) : projected;
+  }
+
+  if (isZodUnionSchema(dataSchema)) {
+    const projected = dataSchema.options.map((option) => {
+      const validPaths = selectedPaths.filter((p) => hasPathInObject(option, p));
+      const obj = validPaths.length > 0 ? projectDataSchema(option, validPaths) : z.object({});
+      return options?.partial ? deepPartial(obj) : obj;
+    });
+
+    const first = projected[0];
+    const second = projected[1];
+    if (!first || !second) {
+      throw new Error('Union must have at least 2 options');
+    }
+    return z.union([first, second, ...projected.slice(2)]);
+  }
+
+  throw new Error(
+    'dataSchema must be a ZodObject or a ZodUnion/ZodDiscriminatedUnion of ZodObjects',
+  );
+}
+
+export function getZodAtPath(obj: DataSchema, path: string): z.ZodType {
   const parts = path.split('.').filter(Boolean);
 
-  let current: unknown = obj;
+  let current: unknown = resolveToZodObject(obj);
 
   for (const p of parts) {
     if (!isZodObjectSchema(current)) {
@@ -224,7 +457,7 @@ export function getZodAtPath(obj: z.ZodObject<z.ZodRawShape>, path: string): z.Z
 }
 
 export function projectDataSchema(
-  dataSchema: z.ZodObject<z.ZodRawShape>,
+  dataSchema: DataSchema,
   selectedPaths: string[],
 ): z.ZodObject<z.ZodRawShape> {
   const tree: Record<string, unknown> = {};
@@ -295,10 +528,12 @@ export function projectDataSchema(
 export interface SelectConfig<
   TSchema extends DataSchema,
   TSelect extends AllowedPath<TSchema> = AllowedPath<TSchema>,
+  TResponseType extends SelectResponseType = 'many',
 > {
   dataSchema: TSchema;
   selectable: readonly TSelect[];
   defaultSelect: readonly TSelect[] | '*';
+  responseType?: TResponseType;
 }
 
 /* ---------------------------------- */
@@ -326,13 +561,23 @@ export interface SelectQueryParams<
   TSelect extends AllowedPath<TSchema> = AllowedPath<TSchema>,
 > {
   select: TSelect[];
+  responseType?: SelectResponseType;
 }
+
+export type SelectResponseData<
+  TSchema extends DataSchema,
+  TSelect extends AllowedPath<TSchema>,
+  TResponseType extends SelectResponseType,
+> = TResponseType extends 'one'
+  ? ProjectedData<TSchema, TSelect>
+  : ProjectedData<TSchema, TSelect>[];
 
 export interface SelectResponse<
   TSchema extends DataSchema,
   TSelect extends AllowedPath<TSchema> = AllowedPath<TSchema>,
+  TResponseType extends SelectResponseType = 'many',
 > {
-  data: ProjectedData<TSchema, TSelect>[];
+  data: SelectResponseData<TSchema, TSelect, TResponseType>;
 }
 
 /**
@@ -354,10 +599,9 @@ export interface SelectResult<
       extraShape: TExtraShape,
     ): z.ZodType<SelectQueryParams<TSchema, TSelectable> & z.infer<z.ZodObject<TExtraShape>>>;
   };
-  validatorSchema: (
-    parsed?: SelectQueryParams<TSchema, TSelectable>,
-  ) => z.ZodType<SelectResponse<TSchema, TSelectable>>;
-  responseSchema: z.ZodObject<SelectResponseSchemaShape>;
+  validatorSchema: (parsed?: SelectQueryParams<TSchema, TSelectable>) => z.ZodType;
+  responseSchema: z.ZodType;
+  responseType: SelectResponseType;
 }
 
 /* ---------------------------------- */
@@ -375,20 +619,34 @@ export interface SelectResult<
 export function select<
   TSchema extends DataSchema,
   const TSelectable extends readonly AllowedPath<TSchema>[],
+  TResponseType extends SelectResponseType = 'many',
 >(
-  config: Omit<SelectConfig<TSchema, TSelectable[number]>, 'selectable' | 'defaultSelect'> & {
-    selectable: TSelectable;
+  config: Omit<
+    SelectConfig<TSchema, TSelectable[number], TResponseType>,
+    'selectable' | 'defaultSelect'
+  > & {
+    selectable: EnsureDiscriminatorInSelectable<TSchema, TSelectable>;
     defaultSelect: readonly NoInfer<TSelectable[number]>[] | '*';
   },
 ): SelectResult<TSchema, TSelectable[number]> {
-  const allowedSelectable = new Set<string>();
-  for (const f of config.selectable) allowedSelectable.add(`${f}`);
+  const responseType: SelectResponseType = config.responseType ?? 'many';
+  const discriminatorKey = getDiscriminatorKey(config.dataSchema);
+  const nestedDiscriminators = findNestedDiscriminators(config.dataSchema);
+
+  const selectableStrings: string[] = [...config.selectable];
+
+  const effectiveConfig: UntypedSelectableConfig = {
+    selectable: selectableStrings,
+    defaultSelect: config.defaultSelect === '*' ? '*' : Array.from(config.defaultSelect, String),
+  };
+
+  const allowedSelectable = new Set<string>(selectableStrings);
 
   const baseSchema = z.object({
     select: SelectSchema.optional(),
   });
 
-  const selectableList = config.selectable.map((f) => `${f}`).join(', ');
+  const selectableList = selectableStrings.join(', ');
   const defaultSelectDesc =
     config.defaultSelect === '*' ? '*' : [...config.defaultSelect].join(', ');
 
@@ -415,8 +673,11 @@ export function select<
     .pipe(
       baseSchema
         .superRefine((val, ctx): void => {
-          const selectForValidation =
-            val.select ?? (config.defaultSelect === '*' ? ['*'] : [...config.defaultSelect]);
+          const selectForValidation: readonly string[] =
+            val.select ??
+            (effectiveConfig.defaultSelect === '*' ? ['*'] : effectiveConfig.defaultSelect);
+
+          const hasWildcard = selectForValidation.includes('*');
 
           let index = 0;
           for (const field of selectForValidation) {
@@ -436,8 +697,8 @@ export function select<
             index += 1;
           }
 
-          if (selectForValidation.includes('*')) {
-            const expanded = expandSelect(selectForValidation, config);
+          if (hasWildcard) {
+            const expanded = expandSelect(selectForValidation, effectiveConfig);
             if (!expanded || expanded.length === 0) {
               ctx.addIssue({
                 code: 'custom',
@@ -446,44 +707,72 @@ export function select<
               });
             }
           }
+
+          if (discriminatorKey && !hasWildcard && !selectForValidation.includes(discriminatorKey)) {
+            ctx.addIssue({
+              code: 'custom',
+              path: ['select'],
+              message: `select must include the discriminator field "${discriminatorKey}" when using a discriminated union`,
+            });
+          }
+
+          // Check nested discriminated unions
+          if (!hasWildcard) {
+            for (const nested of nestedDiscriminators) {
+              const hasAnyFieldUnderPrefix = selectForValidation.some(
+                (f) => f === nested.prefix || f.startsWith(`${nested.prefix}.`),
+              );
+              if (
+                hasAnyFieldUnderPrefix &&
+                !selectForValidation.includes(nested.discriminatorPath)
+              ) {
+                ctx.addIssue({
+                  code: 'custom',
+                  path: ['select'],
+                  message: `select must include the discriminator field "${nested.discriminatorPath}" when selecting fields under "${nested.prefix}" (discriminated union)`,
+                });
+              }
+            }
+          }
         })
         .transform((val): SelectQueryParams<TSchema, TSelectable[number]> => {
-          const resolved = computeSelect<TSchema, TSelectable[number]>(val.select, config);
+          const resolved = computeSelect(val.select, effectiveConfig);
 
           if (!resolved || resolved.length === 0) {
             throw new Error('select resolved to empty (this should not happen after validation)');
           }
 
-          return { select: resolved };
+          // Safe: resolved values come from config.selectable (discriminator enforced at type level).
+          // plus the discriminator key (which is a valid AllowedPath<TSchema> at runtime).
+          const typedSelect: TSelectable[number][] = resolved.filter(
+            (field): field is TSelectable[number] => typeof field === 'string',
+          );
+
+          return { select: typedSelect, responseType };
         }),
     );
 
-  const validatorSchema = (
-    parsed?: SelectQueryParams<TSchema, TSelectable[number]>,
-  ): z.ZodType<SelectResponse<TSchema, TSelectable[number]>> => {
+  const validatorSchema = (parsed?: SelectQueryParams<TSchema, TSelectable[number]>): z.ZodType => {
     const effectiveSelect =
-      parsed?.select ?? computeSelect<TSchema, TSelectable[number]>(undefined, config) ?? undefined;
+      parsed?.select ?? computeSelect(undefined, effectiveConfig) ?? undefined;
 
-    const dataItemSchema =
+    const dataItemSchema: z.ZodType =
       effectiveSelect && effectiveSelect.length > 0
-        ? projectDataSchema(
-            config.dataSchema,
-            effectiveSelect.map((x): string => x),
-          )
-        : config.dataSchema;
+        ? projectDataSchemaPreservingUnion(config.dataSchema, effectiveSelect.map(String))
+        : resolveToZodObject(config.dataSchema);
 
-    return z.object({
-      data: z.array(dataItemSchema),
-    });
+    const dataSchema = responseType === 'one' ? dataItemSchema : z.array(dataItemSchema);
+    const schema: z.ZodType = z.object({ data: dataSchema });
+    return schema;
   };
 
-  const allSelectablePaths = config.selectable.map((f) => `${f}`);
-  const dataItemSchema: z.ZodObject<z.ZodRawShape> =
-    allSelectablePaths.length > 0
-      ? projectDataSchema(config.dataSchema, allSelectablePaths).partial()
-      : config.dataSchema;
-  const responseSchema: z.ZodObject<SelectResponseSchemaShape> = z.object({
-    data: z.array(dataItemSchema),
+  const dataItemSchema: z.ZodType =
+    selectableStrings.length > 0
+      ? projectDataSchemaPreservingUnion(config.dataSchema, selectableStrings, { partial: true })
+      : resolveToZodObject(config.dataSchema);
+  const dataSchemaForResponse = responseType === 'one' ? dataItemSchema : z.array(dataItemSchema);
+  const responseSchema = z.object({
+    data: dataSchemaForResponse,
   });
 
   function queryParamsSchema(): z.ZodType<SelectQueryParams<TSchema, TSelectable[number]>>;
@@ -519,5 +808,10 @@ export function select<
       }));
   }
 
-  return { queryParamsSchema, validatorSchema, responseSchema };
+  return {
+    queryParamsSchema,
+    validatorSchema,
+    responseSchema,
+    responseType,
+  };
 }

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
+import { createDocument, createSchema } from 'zod-openapi';
 import { paginate, select, type WhereNode } from './main';
 
 /* ========================================================================= */
@@ -1249,5 +1250,298 @@ describe('Integration: queryParamsSchema with extra shape', () => {
     expect(parsed.pagination.sortBy).toEqual([{ property: 'id', direction: 'ASC' }]);
     expect(parsed.pagination.filters).toBeDefined();
     expect(parsed.search).toBe('test');
+  });
+});
+
+/* ========================================================================= */
+/*  zod-openapi integration                                                  */
+/* ========================================================================= */
+
+describe('Integration: zod-openapi', () => {
+  const ProductSchema = z.object({
+    id: z.number(),
+    name: z.string(),
+    price: z.number(),
+  });
+
+  describe('select() schemas with zod-openapi', () => {
+    it('responseSchema generates a valid OpenAPI response schema via createDocument', () => {
+      const { responseSchema } = select({
+        dataSchema: ProductSchema,
+        selectable: ['id', 'name', 'price'],
+        defaultSelect: ['id', 'name'],
+      });
+
+      const document = createDocument({
+        openapi: '3.1.0',
+        info: { title: 'Test API', version: '1.0.0' },
+        paths: {
+          '/products': {
+            get: {
+              responses: {
+                '200': {
+                  description: '200 OK',
+                  content: {
+                    'application/json': { schema: responseSchema },
+                  },
+                },
+              },
+            },
+          },
+        },
+      });
+
+      expect(document.openapi).toBe('3.1.0');
+
+      const response = document.paths?.['/products']?.get?.responses?.['200'];
+      expect(response).toBeDefined();
+      expect(response).toHaveProperty('content');
+    });
+
+    it('responseSchema generates a valid JSON schema via createSchema', () => {
+      const { responseSchema } = select({
+        dataSchema: ProductSchema,
+        selectable: ['id', 'name', 'price'],
+        defaultSelect: ['id', 'name'],
+      });
+
+      const { schema } = createSchema(responseSchema);
+
+      expect(schema).toBeDefined();
+      expect(typeof schema).toBe('object');
+      expect(schema).toHaveProperty('type', 'object');
+      expect(schema).toHaveProperty('properties');
+    });
+
+    it('queryParamsSchema generates a valid input schema via createSchema', () => {
+      const { queryParamsSchema } = select({
+        dataSchema: ProductSchema,
+        selectable: ['id', 'name', 'price'],
+        defaultSelect: ['id', 'name'],
+      });
+
+      const { schema } = createSchema(queryParamsSchema(), { io: 'input' });
+
+      expect(schema).toBeDefined();
+      expect(typeof schema).toBe('object');
+    });
+  });
+
+  describe('paginate() schemas with zod-openapi', () => {
+    it('LIMIT_OFFSET responseSchema generates a valid OpenAPI response', () => {
+      const { responseSchema } = paginate({
+        paginationType: 'LIMIT_OFFSET',
+        dataSchema: ProductSchema,
+        selectable: ['id', 'name', 'price'],
+        defaultSelect: '*',
+        defaultLimit: 20,
+        maxLimit: 100,
+      });
+
+      const document = createDocument({
+        openapi: '3.1.0',
+        info: { title: 'Test API', version: '1.0.0' },
+        paths: {
+          '/products': {
+            get: {
+              responses: {
+                '200': {
+                  description: '200 OK',
+                  content: {
+                    'application/json': { schema: responseSchema },
+                  },
+                },
+              },
+            },
+          },
+        },
+      });
+
+      expect(document.openapi).toBe('3.1.0');
+
+      const response = document.paths?.['/products']?.get?.responses?.['200'];
+      expect(response).toBeDefined();
+      expect(response).toHaveProperty('content');
+    });
+
+    it('CURSOR responseSchema generates a valid OpenAPI response', () => {
+      const { responseSchema } = paginate({
+        paginationType: 'CURSOR',
+        dataSchema: ProductSchema,
+        cursorProperty: 'id',
+        selectable: ['id', 'name', 'price'],
+        defaultSelect: ['id', 'name'],
+        defaultLimit: 10,
+        maxLimit: 50,
+      });
+
+      const document = createDocument({
+        openapi: '3.1.0',
+        info: { title: 'Test API', version: '1.0.0' },
+        paths: {
+          '/products': {
+            get: {
+              responses: {
+                '200': {
+                  description: '200 OK',
+                  content: {
+                    'application/json': { schema: responseSchema },
+                  },
+                },
+              },
+            },
+          },
+        },
+      });
+
+      expect(document.openapi).toBe('3.1.0');
+      expect(document.paths?.['/products']?.get?.responses?.['200']).toBeDefined();
+    });
+
+    it('responseSchema generates a valid JSON schema via createSchema', () => {
+      const { responseSchema } = paginate({
+        paginationType: 'LIMIT_OFFSET',
+        dataSchema: ProductSchema,
+        selectable: ['id', 'name', 'price'],
+        defaultSelect: '*',
+        defaultLimit: 20,
+        maxLimit: 100,
+      });
+
+      const { schema } = createSchema(responseSchema);
+
+      expect(schema).toBeDefined();
+      expect(schema).toHaveProperty('type', 'object');
+      expect(schema).toHaveProperty('properties');
+    });
+
+    it('queryParamsSchema generates a valid input schema via createSchema', () => {
+      const { queryParamsSchema } = paginate({
+        paginationType: 'LIMIT_OFFSET',
+        dataSchema: ProductSchema,
+        selectable: ['id', 'name', 'price'],
+        filterable: {
+          name: { type: 'string', ops: ['$eq', '$ilike'] },
+          price: { type: 'number', ops: ['$gt', '$lte', '$btw'] },
+        },
+        defaultSelect: '*',
+        defaultLimit: 20,
+        maxLimit: 100,
+      });
+
+      // queryParamsSchema uses transforms, so it must be rendered in 'input' context
+      const { schema } = createSchema(queryParamsSchema(), { io: 'input' });
+
+      expect(schema).toBeDefined();
+      expect(typeof schema).toBe('object');
+    });
+
+    it('extended queryParamsSchema generates a valid input schema via createSchema', () => {
+      const { queryParamsSchema } = paginate({
+        paginationType: 'LIMIT_OFFSET',
+        dataSchema: ProductSchema,
+        selectable: ['id', 'name', 'price'],
+        defaultSelect: '*',
+        defaultLimit: 20,
+        maxLimit: 100,
+      });
+
+      const extended = queryParamsSchema({
+        search: z.string().optional(),
+      });
+
+      const { schema } = createSchema(extended, { io: 'input' });
+
+      expect(schema).toBeDefined();
+      expect(typeof schema).toBe('object');
+    });
+
+    it('responseSchema with pagination metadata produces correct structure', () => {
+      const { responseSchema } = paginate({
+        paginationType: 'LIMIT_OFFSET',
+        dataSchema: ProductSchema,
+        selectable: ['id', 'name', 'price'],
+        defaultSelect: '*',
+        defaultLimit: 20,
+        maxLimit: 100,
+      });
+
+      const { schema } = createSchema(responseSchema);
+      const props = 'properties' in schema ? schema.properties : undefined;
+
+      expect(props).toBeDefined();
+      expect(props).toHaveProperty('data');
+      expect(props).toHaveProperty('pagination');
+    });
+  });
+
+  describe('discriminated union schemas with zod-openapi', () => {
+    it('responseSchema with discriminated union generates a valid OpenAPI response', () => {
+      const VideoSchema = z.object({
+        type: z.literal('video'),
+        id: z.number(),
+        duration: z.number(),
+      });
+      const AudioSchema = z.object({
+        type: z.literal('audio'),
+        id: z.number(),
+        bitrate: z.number(),
+      });
+      const MediaSchema = z.discriminatedUnion('type', [VideoSchema, AudioSchema]);
+
+      const { responseSchema } = select({
+        dataSchema: MediaSchema,
+        selectable: ['id', 'type', 'duration', 'bitrate'],
+        defaultSelect: ['id', 'type'],
+      });
+
+      const document = createDocument({
+        openapi: '3.1.0',
+        info: { title: 'Media API', version: '1.0.0' },
+        paths: {
+          '/media': {
+            get: {
+              responses: {
+                '200': {
+                  description: '200 OK',
+                  content: {
+                    'application/json': { schema: responseSchema },
+                  },
+                },
+              },
+            },
+          },
+        },
+      });
+
+      expect(document.openapi).toBe('3.1.0');
+      expect(document.paths?.['/media']?.get?.responses?.['200']).toBeDefined();
+    });
+
+    it('discriminated union responseSchema produces correct JSON schema structure', () => {
+      const VideoSchema = z.object({
+        type: z.literal('video'),
+        id: z.number(),
+        duration: z.number(),
+      });
+      const AudioSchema = z.object({
+        type: z.literal('audio'),
+        id: z.number(),
+        bitrate: z.number(),
+      });
+      const MediaSchema = z.discriminatedUnion('type', [VideoSchema, AudioSchema]);
+
+      const { responseSchema } = select({
+        dataSchema: MediaSchema,
+        selectable: ['id', 'type', 'duration', 'bitrate'],
+        defaultSelect: ['id', 'type'],
+      });
+
+      const { schema } = createSchema(responseSchema);
+
+      expect(schema).toBeDefined();
+      expect(schema).toHaveProperty('type', 'object');
+      expect(schema).toHaveProperty('properties');
+    });
   });
 });
