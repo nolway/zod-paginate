@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.6.0](https://github.com/nolway/zod-paginate/compare/v1.5.0...v1.6.0) (2026-04-10)
+
+
+### Features
+
+* handle selectable array ([321c7e3](https://github.com/nolway/zod-paginate/commit/321c7e3e2a85228fa0bf726d65b9b24e33f6602b))
+
+
+### Miscellaneous Chores
+
+* release 1.6.0 ([9c86e5e](https://github.com/nolway/zod-paginate/commit/9c86e5ee83a77225e8f94fdfd52e315730966c60))
+
 ## [1.5.0](https://github.com/nolway/zod-paginate/compare/v1.4.1...v1.5.0) (2026-04-09)
 
 
