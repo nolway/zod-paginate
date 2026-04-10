@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.6.1](https://github.com/nolway/zod-paginate/compare/v1.6.0...v1.6.1) (2026-04-10)
+
+
+### Bug Fixes
+
+* typing issue on validator ([079fb12](https://github.com/nolway/zod-paginate/commit/079fb12bc8cd7f3aea71754950497fde207deb11))
+
+
+### Miscellaneous Chores
+
+* release 1.6.1 ([64df4c0](https://github.com/nolway/zod-paginate/commit/64df4c0400676e17bc11fb24dd4607c611d736b9))
+
 ## [1.6.0](https://github.com/nolway/zod-paginate/compare/v1.5.0...v1.6.0) (2026-04-10)
 
 
