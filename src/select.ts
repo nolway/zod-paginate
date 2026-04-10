@@ -778,8 +778,10 @@ export interface SelectResult<
       extraShape: TExtraShape,
     ): z.ZodType<SelectQueryParams<TSchema, TSelectable> & z.infer<z.ZodObject<TExtraShape>>>;
   };
-  validatorSchema: (parsed?: SelectQueryParams<TSchema, TSelectable>) => z.ZodType;
-  responseSchema: z.ZodType;
+  validatorSchema: (
+    parsed?: SelectQueryParams<TSchema, TSelectable>,
+  ) => z.ZodType<SelectResponse<TSchema, TSelectable>>;
+  responseSchema: z.ZodObject<SelectResponseSchemaShape>;
   responseType: SelectResponseType;
 }
 
@@ -934,7 +936,10 @@ export function select<
         }),
     );
 
-  const validatorSchema = (parsed?: SelectQueryParams<TSchema, TSelectable[number]>): z.ZodType => {
+  function validatorSchema(
+    parsed?: SelectQueryParams<TSchema, TSelectable[number]>,
+  ): z.ZodType<SelectResponse<TSchema, TSelectable[number]>>;
+  function validatorSchema(parsed?: SelectQueryParams<TSchema, TSelectable[number]>): z.ZodType {
     const effectiveSelect =
       parsed?.select ?? computeSelect(undefined, effectiveConfig) ?? undefined;
 
@@ -946,16 +951,19 @@ export function select<
     const dataSchema = responseType === 'one' ? dataItemSchema : z.array(dataItemSchema);
     const schema: z.ZodType = z.object({ data: dataSchema });
     return schema;
-  };
+  }
 
   const dataItemSchema: z.ZodType =
     selectableStrings.length > 0
       ? projectDataSchemaPreservingUnion(config.dataSchema, selectableStrings, { partial: true })
       : resolveToZodObject(config.dataSchema);
   const dataSchemaForResponse = responseType === 'one' ? dataItemSchema : z.array(dataItemSchema);
-  const responseSchema = z.object({
-    data: dataSchemaForResponse,
-  });
+
+  function buildResponseSchema(): z.ZodObject<SelectResponseSchemaShape>;
+  function buildResponseSchema(): z.ZodType {
+    return z.object({ data: dataSchemaForResponse });
+  }
+  const responseSchema = buildResponseSchema();
 
   function queryParamsSchema(): z.ZodType<SelectQueryParams<TSchema, TSelectable[number]>>;
   function queryParamsSchema<TExtraShape extends z.ZodRawShape>(

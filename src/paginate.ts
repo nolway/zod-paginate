@@ -960,7 +960,9 @@ export interface PaginateResult<
       extraShape: TExtraShape,
     ): z.ZodType<PaginationQueryParams<TSchema, TType> & z.infer<z.ZodObject<TExtraShape>>>;
   };
-  validatorSchema: (parsed?: PaginationPayload<TSchema>) => z.ZodType;
+  validatorSchema: (
+    parsed?: PaginationPayload<TSchema>,
+  ) => z.ZodType<PaginationResponse<TSchema, AllowedPath<TSchema>, TType>>;
   responseSchema: z.ZodObject<PaginationResponseSchemaShape<TType>>;
 }
 
@@ -1684,7 +1686,10 @@ export function paginate<
   const CURSOR_META_DESC = 'Pagination metadata for cursor mode';
   const CURSOR_VALUE_DESC = 'Cursor value pointing to the last item returned';
 
-  const validatorSchema = (parsed?: PaginationPayload<TSchema>): z.ZodType => {
+  function validatorSchema(
+    parsed?: PaginationPayload<TSchema>,
+  ): z.ZodType<PaginationResponse<TSchema, AllowedPath<TSchema>>>;
+  function validatorSchema(parsed?: PaginationPayload<TSchema>): z.ZodType {
     const effectiveSelect =
       parsed?.select ?? computeSelect(undefined, effectiveConfig) ?? undefined;
 
@@ -1721,7 +1726,7 @@ export function paginate<
         })
         .meta({ description: CURSOR_META_DESC }),
     });
-  };
+  }
 
   const partialDataItemSchema =
     selectableStrings.length > 0
