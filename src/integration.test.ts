@@ -1,7 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import { createDocument, createSchema } from 'zod-openapi';
-import { paginate, select, type WhereNode } from './main';
+import {
+  paginate,
+  select,
+  type SelectResult,
+  type WhereNode,
+  isPlainObject,
+  getOwnProp,
+} from './main';
 
 /* ========================================================================= */
 /*  Shared schemas                                                           */
@@ -664,8 +671,17 @@ describe('Integration: CURSOR with date cursorProperty', () => {
 /* ========================================================================= */
 
 describe('Integration: select() full flow', () => {
-  // eslint-disable-next-line @typescript-eslint/explicit-function-return-type
-  function setup() {
+  function setup(): SelectResult<
+    typeof UserSchema,
+    | 'id'
+    | 'username'
+    | 'email'
+    | 'role'
+    | 'age'
+    | 'profile.bio'
+    | 'profile.avatar'
+    | 'profile.settings.theme'
+  > {
     return select({
       dataSchema: UserSchema,
       selectable: [
@@ -1057,21 +1073,27 @@ describe('Integration: Edge cases', () => {
  * mimicking what zod-openapi does.
  */
 function unwrapRootZodObject(schema: z.ZodType): Record<string, unknown> | undefined {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let current: any = schema;
+  let current: unknown = schema;
 
   for (let i = 0; i < 10; i++) {
-    const def = current?._zod?.def;
-    if (!def) return undefined;
+    if (!isPlainObject(current)) return undefined;
 
-    if (def.type === 'object' && typeof def.shape === 'object' && def.shape !== null) {
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+    const zodField = getOwnProp(current, '_zod');
+    if (!isPlainObject(zodField)) return undefined;
+
+    const def = getOwnProp(zodField, 'def');
+    if (!isPlainObject(def)) return undefined;
+
+    if (def.type === 'object' && isPlainObject(def.shape)) {
       return def.shape;
     }
 
-    if (def.type === 'pipe' && def.in) {
-      current = def.in;
-      continue;
+    if (def.type === 'pipe') {
+      const inner = getOwnProp(def, 'in');
+      if (inner) {
+        current = inner;
+        continue;
+      }
     }
 
     return undefined;

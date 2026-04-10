@@ -1,9 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
+import { paginate } from './paginate';
 import {
   select,
+  type SelectResult,
   findNestedDiscriminators,
   resolveToZodObject,
+  collectLeafObjects,
   getZodAtPath,
   projectDataSchema,
   projectDataSchemaPreservingUnion,
@@ -20,8 +23,7 @@ const ModelSchema = z.object({
   }),
 });
 
-// eslint-disable-next-line @typescript-eslint/explicit-function-return-type
-function makeSelect() {
+function makeSelect(): SelectResult<typeof ModelSchema, 'id' | 'status' | 'meta.score'> {
   return select({
     dataSchema: ModelSchema,
     selectable: ['id', 'status', 'meta.score'],
@@ -29,8 +31,10 @@ function makeSelect() {
   });
 }
 
-// eslint-disable-next-line @typescript-eslint/explicit-function-return-type
-function makeSelectWithPartialDefault() {
+function makeSelectWithPartialDefault(): SelectResult<
+  typeof ModelSchema,
+  'id' | 'status' | 'meta.score'
+> {
   return select({
     dataSchema: ModelSchema,
     selectable: ['id', 'status', 'meta.score'],
@@ -456,8 +460,7 @@ describe('select with ZodDiscriminatedUnion', () => {
 
   const MediaSchema = z.discriminatedUnion('type', [VideoSchema, AudioSchema]);
 
-  // eslint-disable-next-line @typescript-eslint/explicit-function-return-type
-  function makeUnionSelect() {
+  function makeUnionSelect(): SelectResult<typeof MediaSchema, 'id' | 'name' | 'type'> {
     return select({
       dataSchema: MediaSchema,
       selectable: ['id', 'name', 'type'],
@@ -632,8 +635,7 @@ describe('select with nested discriminated union', () => {
 /* ---------------------------------- */
 
 describe('select with responseType object', () => {
-  // eslint-disable-next-line @typescript-eslint/explicit-function-return-type
-  function makeObjectSelect() {
+  function makeObjectSelect(): SelectResult<typeof ModelSchema, 'id' | 'status' | 'meta.score'> {
     return select({
       dataSchema: ModelSchema,
       selectable: ['id', 'status', 'meta.score'],
@@ -909,5 +911,423 @@ describe('computeSelect', () => {
   it('expands defaultSelect="*"', () => {
     const result = computeSelect(undefined, { selectable: ['id', 'name'], defaultSelect: '*' });
     expect(result).toEqual(['id', 'name']);
+  });
+});
+
+/* ---------------------------------- */
+/* Nested discriminated unions        */
+/* ---------------------------------- */
+
+describe('nested discriminated unions (union of unions)', () => {
+  const VideoScheduled = z.object({
+    status: z.literal('scheduled'),
+    materialType: z.literal('video'),
+    uuid: z.string(),
+    videoId: z.number(),
+    duration: z.number(),
+  });
+  const AudioScheduled = z.object({
+    status: z.literal('scheduled'),
+    materialType: z.literal('audio'),
+    uuid: z.string(),
+    videoId: z.number(),
+    bitrate: z.number(),
+  });
+  const VideoCompleted = z.object({
+    status: z.literal('completed'),
+    materialType: z.literal('video'),
+    uuid: z.string(),
+    videoId: z.number(),
+    duration: z.number(),
+    outputPath: z.string(),
+  });
+  const AudioCompleted = z.object({
+    status: z.literal('completed'),
+    materialType: z.literal('audio'),
+    uuid: z.string(),
+    videoId: z.number(),
+    bitrate: z.number(),
+    outputPath: z.string(),
+  });
+
+  const ScheduledUnion = z.discriminatedUnion('materialType', [VideoScheduled, AudioScheduled]);
+  const CompletedUnion = z.discriminatedUnion('materialType', [VideoCompleted, AudioCompleted]);
+  const NestedUnion = z.discriminatedUnion('status', [ScheduledUnion, CompletedUnion]);
+
+  describe('collectLeafObjects', () => {
+    it('collects all leaf ZodObjects from nested unions', () => {
+      const leaves = collectLeafObjects(NestedUnion);
+      expect(leaves).toHaveLength(4);
+    });
+
+    it('returns single object for ZodObject input', () => {
+      const leaves = collectLeafObjects(VideoScheduled);
+      expect(leaves).toHaveLength(1);
+    });
+  });
+
+  describe('resolveToZodObject', () => {
+    it('merges all leaf shapes from nested unions', () => {
+      const merged = resolveToZodObject(NestedUnion);
+      const keys = Object.keys(merged.shape);
+      expect(keys).toContain('status');
+      expect(keys).toContain('materialType');
+      expect(keys).toContain('uuid');
+      expect(keys).toContain('videoId');
+      expect(keys).toContain('duration');
+      expect(keys).toContain('bitrate');
+      expect(keys).toContain('outputPath');
+    });
+  });
+
+  describe('findNestedDiscriminators', () => {
+    it('finds both top-level and nested discriminator keys', () => {
+      const discs = findNestedDiscriminators(NestedUnion);
+      const paths = discs.map((d) => d.discriminatorPath);
+      expect(paths).toContain('status');
+      expect(paths).toContain('materialType');
+    });
+  });
+
+  describe('projectDataSchemaPreservingUnion', () => {
+    it('preserves nested union structure during projection', () => {
+      const projected = projectDataSchemaPreservingUnion(NestedUnion, [
+        'status',
+        'materialType',
+        'uuid',
+        'videoId',
+      ]);
+
+      expect(
+        projected.safeParse({ status: 'scheduled', materialType: 'video', uuid: 'a', videoId: 1 })
+          .success,
+      ).toBe(true);
+      expect(
+        projected.safeParse({ status: 'scheduled', materialType: 'audio', uuid: 'b', videoId: 2 })
+          .success,
+      ).toBe(true);
+      expect(
+        projected.safeParse({ status: 'completed', materialType: 'video', uuid: 'c', videoId: 3 })
+          .success,
+      ).toBe(true);
+      expect(
+        projected.safeParse({ status: 'completed', materialType: 'audio', uuid: 'd', videoId: 4 })
+          .success,
+      ).toBe(true);
+    });
+
+    it('projects only selected paths per leaf', () => {
+      const projected = projectDataSchemaPreservingUnion(NestedUnion, [
+        'status',
+        'materialType',
+        'uuid',
+        'duration',
+      ]);
+
+      expect(
+        projected.safeParse({
+          status: 'scheduled',
+          materialType: 'video',
+          uuid: 'a',
+          duration: 120,
+        }).success,
+      ).toBe(true);
+      expect(
+        projected.safeParse({ status: 'scheduled', materialType: 'audio', uuid: 'b' }).success,
+      ).toBe(true);
+    });
+
+    it('applies deep partial to nested unions', () => {
+      const projected = projectDataSchemaPreservingUnion(
+        NestedUnion,
+        ['status', 'materialType', 'uuid'],
+        { partial: true },
+      );
+
+      expect(projected.safeParse({}).success).toBe(true);
+      expect(projected.safeParse({ status: 'scheduled' }).success).toBe(true);
+    });
+  });
+
+  describe('select() with nested unions', () => {
+    it('accepts nested discriminated union as dataSchema', () => {
+      const s = select({
+        dataSchema: NestedUnion,
+        selectable: ['status', 'materialType', 'uuid', 'videoId', 'duration', 'bitrate'],
+        defaultSelect: ['status', 'materialType', 'uuid'],
+      });
+
+      const parsed = s.queryParamsSchema().parse({ select: 'status,materialType,uuid,videoId' });
+      expect(parsed.select).toEqual(['status', 'materialType', 'uuid', 'videoId']);
+    });
+
+    it('enforces both discriminator keys in select', () => {
+      const s = select({
+        dataSchema: NestedUnion,
+        selectable: ['status', 'materialType', 'uuid', 'videoId'],
+        defaultSelect: ['status', 'materialType', 'uuid'],
+      });
+
+      const r1 = s.queryParamsSchema().safeParse({ select: 'status,uuid' });
+      expect(r1.success).toBe(false);
+
+      const r2 = s.queryParamsSchema().safeParse({ select: 'materialType,uuid' });
+      expect(r2.success).toBe(false);
+
+      const r3 = s.queryParamsSchema().safeParse({ select: 'status,materialType,uuid' });
+      expect(r3.success).toBe(true);
+    });
+
+    it('wildcard select works with nested unions', () => {
+      const s = select({
+        dataSchema: NestedUnion,
+        selectable: ['status', 'materialType', 'uuid', 'videoId'],
+        defaultSelect: '*',
+      });
+
+      const parsed = s.queryParamsSchema().parse({});
+      expect(parsed.select).toEqual(['status', 'materialType', 'uuid', 'videoId']);
+    });
+
+    it('validatorSchema validates against nested union structure', () => {
+      const s = select({
+        dataSchema: NestedUnion,
+        selectable: ['status', 'materialType', 'uuid', 'videoId', 'duration', 'bitrate'],
+        defaultSelect: ['status', 'materialType', 'uuid'],
+      });
+
+      const parsed = s
+        .queryParamsSchema()
+        .parse({ select: 'status,materialType,uuid,videoId,duration,bitrate' });
+      const schema = s.validatorSchema(parsed);
+
+      expect(
+        schema.safeParse({
+          data: [
+            { status: 'scheduled', materialType: 'video', uuid: 'a', videoId: 1, duration: 120 },
+          ],
+        }).success,
+      ).toBe(true);
+
+      expect(
+        schema.safeParse({
+          data: [
+            {
+              status: 'completed',
+              materialType: 'audio',
+              uuid: 'b',
+              videoId: 2,
+              bitrate: 320,
+              outputPath: 'path',
+            },
+          ],
+        }).success,
+      ).toBe(true);
+    });
+
+    it('responseSchema works with nested unions (partial)', () => {
+      const s = select({
+        dataSchema: NestedUnion,
+        selectable: ['status', 'materialType', 'uuid', 'videoId'],
+        defaultSelect: '*',
+      });
+
+      expect(s.responseSchema.safeParse({ data: [{ status: 'scheduled' }] }).success).toBe(true);
+      expect(s.responseSchema.safeParse({ data: [{ uuid: 'x' }] }).success).toBe(true);
+    });
+  });
+
+  describe('paginate() with nested unions', () => {
+    it('accepts nested discriminated union as dataSchema', () => {
+      const p = paginate({
+        paginationType: 'LIMIT_OFFSET',
+        dataSchema: NestedUnion,
+        selectable: ['status', 'materialType', 'uuid', 'videoId'],
+        defaultSelect: ['status', 'materialType', 'uuid'],
+        defaultLimit: 20,
+        maxLimit: 100,
+      });
+
+      const parsed = p.queryParamsSchema().parse({
+        select: 'status,materialType,uuid,videoId',
+        limit: '10',
+      });
+      expect(parsed.pagination.select).toEqual(['status', 'materialType', 'uuid', 'videoId']);
+    });
+
+    it('enforces nested discriminator keys in paginate select', () => {
+      const p = paginate({
+        paginationType: 'LIMIT_OFFSET',
+        dataSchema: NestedUnion,
+        selectable: ['status', 'materialType', 'uuid', 'videoId'],
+        defaultSelect: ['status', 'materialType', 'uuid'],
+        defaultLimit: 20,
+        maxLimit: 100,
+      });
+
+      const r = p.queryParamsSchema().safeParse({ select: 'status,uuid', limit: '10' });
+      expect(r.success).toBe(false);
+    });
+
+    it('responseSchema validates with nested union', () => {
+      const p = paginate({
+        paginationType: 'LIMIT_OFFSET',
+        dataSchema: NestedUnion,
+        selectable: ['status', 'materialType', 'uuid', 'videoId'],
+        defaultSelect: '*',
+        defaultLimit: 20,
+        maxLimit: 100,
+      });
+
+      expect(
+        p.responseSchema.safeParse({
+          data: [{ status: 'scheduled', materialType: 'video' }],
+          pagination: { itemsPerPage: 20, totalItems: 1, currentPage: 1, totalPages: 1 },
+        }).success,
+      ).toBe(true);
+    });
+  });
+});
+
+/* ---------------------------------- */
+/* Array element path support          */
+/* ---------------------------------- */
+
+describe('array element path support', () => {
+  const ArraySchema = z.object({
+    id: z.number(),
+    tags: z.array(
+      z.object({
+        name: z.string(),
+        color: z.string(),
+        meta: z.object({ score: z.number() }),
+      }),
+    ),
+    versions: z.array(z.object({ version: z.number(), label: z.string() })).optional(),
+  });
+
+  describe('getZodAtPath through arrays', () => {
+    it('resolves a field inside an array element', () => {
+      const schema = getZodAtPath(ArraySchema, 'tags.name');
+      expect(schema).toBeDefined();
+      expect(schema.safeParse('hello').success).toBe(true);
+    });
+
+    it('resolves a nested field inside an array element', () => {
+      const schema = getZodAtPath(ArraySchema, 'tags.meta.score');
+      expect(schema).toBeDefined();
+      expect(schema.safeParse(42).success).toBe(true);
+    });
+
+    it('resolves a field inside an optional array element', () => {
+      const schema = getZodAtPath(ArraySchema, 'versions.version');
+      expect(schema).toBeDefined();
+      expect(schema.safeParse(1).success).toBe(true);
+    });
+
+    it('returns the array schema when the path ends at the array', () => {
+      const schema = getZodAtPath(ArraySchema, 'tags');
+      expect(schema.safeParse([{ name: 'a', color: 'b', meta: { score: 1 } }]).success).toBe(true);
+    });
+  });
+
+  describe('projectDataSchema with array paths', () => {
+    it('projects fields inside array elements, wrapping result in z.array()', () => {
+      const projected = projectDataSchema(ArraySchema, ['id', 'tags.name', 'tags.color']);
+      const result = projected.safeParse({ id: 1, tags: [{ name: 'a', color: 'red' }] });
+      expect(result.success).toBe(true);
+    });
+
+    it('projects nested fields inside array elements', () => {
+      const projected = projectDataSchema(ArraySchema, ['id', 'tags.meta.score']);
+      const result = projected.safeParse({ id: 1, tags: [{ meta: { score: 5 } }] });
+      expect(result.success).toBe(true);
+    });
+
+    it('projects optional array element fields, preserving optionality', () => {
+      const projected = projectDataSchema(ArraySchema, ['id', 'versions.version']);
+      expect(projected.safeParse({ id: 1 }).success).toBe(true);
+      expect(projected.safeParse({ id: 1, versions: [{ version: 2 }] }).success).toBe(true);
+    });
+
+    it('rejects invalid data inside projected array', () => {
+      const projected = projectDataSchema(ArraySchema, ['id', 'tags.name']);
+      expect(projected.safeParse({ id: 1, tags: [{ name: 123 }] }).success).toBe(false);
+    });
+  });
+
+  describe('select() with array element paths', () => {
+    it('parses select with array element fields', () => {
+      const s = select({
+        dataSchema: ArraySchema,
+        selectable: ['id', 'tags.name', 'tags.color', 'tags.meta.score'] as const,
+        defaultSelect: ['id', 'tags.name'],
+      });
+      const parsed = s.queryParamsSchema().parse({ select: 'id,tags.name,tags.color' });
+      expect(parsed.select).toEqual(['id', 'tags.name', 'tags.color']);
+    });
+
+    it('validatorSchema produces a schema that validates array element projections', () => {
+      const s = select({
+        dataSchema: ArraySchema,
+        selectable: ['id', 'tags.name', 'tags.meta.score'] as const,
+        defaultSelect: ['id', 'tags.name'],
+      });
+      const parsed = s.queryParamsSchema().parse({ select: 'id,tags.meta.score' });
+      const schema = s.validatorSchema(parsed);
+      expect(schema.safeParse({ data: [{ id: 1, tags: [{ meta: { score: 5 } }] }] }).success).toBe(
+        true,
+      );
+    });
+  });
+
+  describe('paginate() with array element paths', () => {
+    it('parses and validates array element fields', () => {
+      const p = paginate({
+        dataSchema: ArraySchema,
+        paginationType: 'LIMIT_OFFSET',
+        selectable: ['id', 'tags.name', 'tags.color', 'tags.meta.score'] as const,
+        defaultSelect: ['id', 'tags.name'],
+        defaultLimit: 20,
+        maxLimit: 100,
+      });
+      const parsed = p.queryParamsSchema().parse({ select: 'id,tags.name,tags.meta.score' });
+      expect(parsed.pagination.select).toEqual(['id', 'tags.name', 'tags.meta.score']);
+
+      const vSchema = p.validatorSchema(parsed.pagination);
+      expect(vSchema).toBeDefined();
+    });
+  });
+
+  describe('union + array element paths', () => {
+    const UnionArraySchema = z.discriminatedUnion('type', [
+      z.object({
+        type: z.literal('A'),
+        items: z.array(z.object({ name: z.string(), value: z.number() })),
+      }),
+      z.object({
+        type: z.literal('B'),
+        items: z.array(z.object({ name: z.string(), label: z.string() })),
+      }),
+    ]);
+
+    it('projects array element paths across union variants', () => {
+      const s = select({
+        dataSchema: UnionArraySchema,
+        selectable: ['type', 'items.name'] as const,
+        defaultSelect: ['type', 'items.name'],
+      });
+      const parsed = s.queryParamsSchema().parse({});
+      expect(parsed.select).toEqual(['type', 'items.name']);
+
+      const schema = s.validatorSchema(parsed);
+      expect(schema).toBeDefined();
+    });
+
+    it('projectDataSchemaPreservingUnion handles array element paths', () => {
+      const projected = projectDataSchemaPreservingUnion(UnionArraySchema, ['type', 'items.name']);
+      expect(projected).toBeDefined();
+      expect(projected.safeParse({ type: 'A', items: [{ name: 'hello' }] }).success).toBe(true);
+    });
   });
 });

@@ -971,8 +971,7 @@ describe('PaginationType narrowing', () => {
   });
 
   it('LIMIT_OFFSET: queryParamsSchema narrows payload to LimitOffsetPaginationPayload', () => {
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const lo = paginate({
+    const _lo = paginate({
       paginationType: 'LIMIT_OFFSET',
       dataSchema: ModelSchema,
       selectable: ['id'],
@@ -981,8 +980,9 @@ describe('PaginationType narrowing', () => {
       maxLimit: 50,
       defaultSelect: ['id'],
     });
+    expect(_lo).toBeDefined();
 
-    type QP = z.infer<ReturnType<typeof lo.queryParamsSchema>>;
+    type QP = z.infer<ReturnType<typeof _lo.queryParamsSchema>>;
     type Payload = QP['pagination'];
 
     // Statically, page exists on the narrowed payload (no union)
@@ -995,8 +995,7 @@ describe('PaginationType narrowing', () => {
   });
 
   it('CURSOR: queryParamsSchema narrows payload to CursorPaginationPayload', () => {
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const cur = paginate({
+    const _cur = paginate({
       paginationType: 'CURSOR',
       dataSchema: ModelSchema,
       cursorProperty: 'id',
@@ -1006,8 +1005,9 @@ describe('PaginationType narrowing', () => {
       maxLimit: 50,
       defaultSelect: ['id'],
     });
+    expect(_cur).toBeDefined();
 
-    type QP = z.infer<ReturnType<typeof cur.queryParamsSchema>>;
+    type QP = z.infer<ReturnType<typeof _cur.queryParamsSchema>>;
     type Payload = QP['pagination'];
 
     // Statically, cursorProperty exists on the narrowed payload (no union)
@@ -1022,7 +1022,7 @@ describe('PaginationType narrowing', () => {
 
   it('PaginateResult<…, "LIMIT_OFFSET"> is assignable from paginate() return', () => {
     // Explicit return type annotation with TType works
-    function make(): PaginateResult<typeof ModelSchema, 'id' | 'status', 'LIMIT_OFFSET'> {
+    function make(): PaginateResult<typeof ModelSchema, 'LIMIT_OFFSET'> {
       return paginate({
         paginationType: 'LIMIT_OFFSET',
         dataSchema: ModelSchema,
@@ -1044,7 +1044,7 @@ describe('PaginationType narrowing', () => {
   });
 
   it('PaginateResult<…, "CURSOR"> is assignable from paginate() return', () => {
-    function make(): PaginateResult<typeof ModelSchema, 'id' | 'status', 'CURSOR'> {
+    function make(): PaginateResult<typeof ModelSchema, 'CURSOR'> {
       return paginate({
         paginationType: 'CURSOR',
         dataSchema: ModelSchema,
@@ -1111,8 +1111,7 @@ describe('paginate with ZodDiscriminatedUnion', () => {
 
   const MediaSchema = z.discriminatedUnion('type', [VideoSchema, AudioSchema]);
 
-  // eslint-disable-next-line @typescript-eslint/explicit-function-return-type
-  function makeUnionLimitOffset() {
+  function makeUnionLimitOffset(): PaginateResult<typeof MediaSchema, 'LIMIT_OFFSET'> {
     return paginate({
       paginationType: 'LIMIT_OFFSET',
       dataSchema: MediaSchema,
@@ -1123,8 +1122,7 @@ describe('paginate with ZodDiscriminatedUnion', () => {
     });
   }
 
-  // eslint-disable-next-line @typescript-eslint/explicit-function-return-type
-  function makeUnionCursor() {
+  function makeUnionCursor(): PaginateResult<typeof MediaSchema, 'CURSOR'> {
     return paginate({
       paginationType: 'CURSOR',
       dataSchema: MediaSchema,

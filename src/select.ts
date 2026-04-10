@@ -27,12 +27,18 @@ export type Path<T, D extends number = 5> = D extends 0
   ? never
   : T extends Primitive
     ? never
-    : T extends readonly unknown[]
-      ? never
+    : T extends readonly (infer E)[]
+      ? E extends Primitive
+        ? never
+        : Path<E, Prev[D]>
       : {
-          [K in Extract<keyof T, string>]: T[K] extends Primitive | readonly unknown[]
+          [K in Extract<keyof T, string>]: T[K] extends Primitive
             ? K
-            : K | Join<K, Path<T[K], Prev[D]>>;
+            : T[K] extends readonly (infer E)[]
+              ? E extends Primitive
+                ? K
+                : K | Join<K, Path<E, Prev[D]>>
+              : K | Join<K, Path<T[K], Prev[D]>>;
         }[Extract<keyof T, string>];
 
 /**
@@ -41,7 +47,9 @@ export type Path<T, D extends number = 5> = D extends 0
  */
 export type PathValue<T, P extends string> = P extends `${infer K}.${infer Rest}`
   ? K extends keyof T
-    ? PathValue<T[K], Rest>
+    ? T[K] extends readonly (infer E)[]
+      ? PathValue<E, Rest>
+      : PathValue<T[K], Rest>
     : never
   : P extends keyof T
     ? T[P]
@@ -54,7 +62,13 @@ export type PathValue<T, P extends string> = P extends `${infer K}.${infer Rest}
 export type DataSchema =
   | z.ZodObject<z.ZodRawShape>
   | z.ZodDiscriminatedUnion<readonly [z.ZodObject<z.ZodRawShape>, ...z.ZodObject<z.ZodRawShape>[]]>
-  | z.ZodUnion<readonly [z.ZodObject<z.ZodRawShape>, ...z.ZodObject<z.ZodRawShape>[]]>;
+  | z.ZodUnion<readonly [z.ZodObject<z.ZodRawShape>, ...z.ZodObject<z.ZodRawShape>[]]>
+  | z.ZodDiscriminatedUnion<
+      readonly [z.ZodType<Record<string, unknown>>, ...z.ZodType<Record<string, unknown>>[]]
+    >
+  | z.ZodUnion<
+      readonly [z.ZodType<Record<string, unknown>>, ...z.ZodType<Record<string, unknown>>[]]
+    >;
 export type InferData<TSchema extends DataSchema> = z.infer<TSchema>;
 export type AllowedPath<TSchema extends DataSchema> = Path<InferData<TSchema>>;
 
@@ -64,8 +78,7 @@ export type AllowedPath<TSchema extends DataSchema> = Path<InferData<TSchema>>;
  */
 export type ExtractDiscriminator<TSchema> =
   TSchema extends z.ZodDiscriminatedUnion<
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    any[],
+    z.ZodType<Record<string, unknown>>[],
     infer D extends string
   >
     ? D
@@ -247,10 +260,80 @@ function isZodObjectSchema(v: unknown): v is z.ZodObject<z.ZodRawShape> {
 }
 
 /** Duck-typed check for union schemas (ZodUnion / ZodDiscriminatedUnion). */
-function isZodUnionSchema(v: unknown): v is { options: z.ZodObject<z.ZodRawShape>[] } & z.ZodType {
+function isZodUnionSchema(
+  v: unknown,
+): v is { options: (z.ZodObject<z.ZodRawShape> | z.ZodType)[] } & z.ZodType {
   if (!isPlainObject(v)) return false;
   const options = getOwnProp(v, 'options');
-  return Array.isArray(options) && options.length > 0 && isZodObjectSchema(options[0]);
+  if (!Array.isArray(options) || options.length === 0) return false;
+  // Each option must be a ZodObject or another union
+  return options.every((o) => isZodObjectSchema(o) || isZodUnionSchema(o));
+}
+
+/** Duck-typed: get the element schema from a ZodArray. Returns undefined if not a ZodArray. */
+function getZodArrayElement(v: unknown): z.ZodType | undefined {
+  if (!isPlainObject(v)) return undefined;
+  const element = getOwnProp(v, 'element');
+  if (isZodSchema(element)) return element;
+  return undefined;
+}
+
+/** Try to unwrap one layer (optional, nullable, etc.) via `unwrap()` method. */
+function tryZodUnwrap(v: unknown): z.ZodType | undefined {
+  if (!isPlainObject(v)) return undefined;
+  const fn = getOwnProp(v, 'unwrap');
+  if (typeof fn !== 'function') return undefined;
+  const result: unknown = fn.call(v);
+  if (isZodSchema(result)) return result;
+  return undefined;
+}
+
+/**
+ * Resolve a schema for path traversal: unwrap optional/nullable and array wrappers
+ * to reach the inner ZodObject or ZodUnion that can be traversed further.
+ */
+function resolveSchemaForTraversal(schema: unknown): {
+  inner: unknown;
+  isArray: boolean;
+  isOptional: boolean;
+} {
+  let current = schema;
+  let isArray = false;
+  let isOptional = false;
+
+  for (let i = 0; i < 10; i += 1) {
+    if (isZodObjectSchema(current) || isZodUnionSchema(current)) break;
+
+    const element = getZodArrayElement(current);
+    if (element) {
+      isArray = true;
+      current = element;
+      continue;
+    }
+
+    const unwrapped = tryZodUnwrap(current);
+    if (unwrapped) {
+      isOptional = true;
+      current = unwrapped;
+      continue;
+    }
+
+    break;
+  }
+
+  return { inner: current, isArray, isOptional };
+}
+
+/**
+ * Recursively collect all leaf ZodObject schemas from a DataSchema.
+ * Traverses nested unions (ZodUnion / ZodDiscriminatedUnion) to reach the ZodObject leaves.
+ */
+export function collectLeafObjects(schema: DataSchema | z.ZodType): z.ZodObject<z.ZodRawShape>[] {
+  if (isZodObjectSchema(schema)) return [schema];
+  if (isZodUnionSchema(schema)) {
+    return schema.options.flatMap((option) => collectLeafObjects(option));
+  }
+  return [];
 }
 
 /**
@@ -291,6 +374,11 @@ export interface NestedDiscriminator {
  * Returns an array of `{ prefix, discriminatorPath }` for each nested discriminated union.
  * For example, if `codec` is a `z.discriminatedUnion("type", ...)`, returns
  * `[{ prefix: "codec", discriminatorPath: "codec.type" }]`.
+ *
+ * Also detects top-level discriminators from nested union levels.
+ * E.g. `discriminatedUnion('status', [ discriminatedUnion('materialType', [obj, ...]) ])`
+ * returns both `{ prefix: '', discriminatorPath: 'status' }` and
+ * `{ prefix: '', discriminatorPath: 'materialType' }`.
  */
 export function findNestedDiscriminators(schema: DataSchema): NestedDiscriminator[] {
   const results: NestedDiscriminator[] = [];
@@ -319,8 +407,13 @@ export function findNestedDiscriminators(schema: DataSchema): NestedDiscriminato
   if (isZodObjectSchema(schema)) {
     walkObject(schema, '');
   } else if (isZodUnionSchema(schema)) {
-    for (const option of schema.options) {
-      walkObject(option, '');
+    // Collect discriminator keys from all union levels (including nested unions)
+    const unionDiscs = collectUnionDiscriminators(schema, '');
+    results.push(...unionDiscs);
+    // Walk leaf objects for nested discriminated union fields
+    const leaves = collectLeafObjects(schema);
+    for (const leaf of leaves) {
+      walkObject(leaf, '');
     }
   }
 
@@ -328,17 +421,49 @@ export function findNestedDiscriminators(schema: DataSchema): NestedDiscriminato
 }
 
 /**
+ * Recursively collect discriminator keys from nested union levels.
+ * For `discriminatedUnion('status', [discriminatedUnion('materialType', [...])])`,
+ * this produces `{ prefix: '', discriminatorPath: 'status' }` and
+ * `{ prefix: '', discriminatorPath: 'materialType' }`.
+ */
+function collectUnionDiscriminators(
+  schema: unknown,
+  prefix: string,
+  results: NestedDiscriminator[] = [],
+  seen = new Set<string>(),
+): NestedDiscriminator[] {
+  const disc = getDiscriminatorKeyFromAny(schema);
+  if (disc) {
+    const path = prefix ? `${prefix}.${disc}` : disc;
+    if (!seen.has(path)) {
+      seen.add(path);
+      results.push({ prefix, discriminatorPath: path });
+    }
+  }
+  if (isUnionLike(schema)) {
+    for (const option of schema.options) {
+      if (!isZodObjectSchema(option)) {
+        // Nested union — recurse at the same prefix level
+        collectUnionDiscriminators(option, prefix, results, seen);
+      }
+    }
+  }
+  return results;
+}
+
+/**
  * If the schema is a ZodObject, return it directly.
- * If the schema is a ZodUnion / ZodDiscriminatedUnion whose options are ZodObjects,
- * merge all option shapes into a single ZodObject (first-seen key wins).
+ * If the schema is a ZodUnion / ZodDiscriminatedUnion (possibly nested),
+ * collect all leaf ZodObject shapes and merge them into a single ZodObject (first-seen key wins).
  */
 export function resolveToZodObject(schema: DataSchema): z.ZodObject<z.ZodRawShape> {
   if (isZodObjectSchema(schema)) return schema;
 
   if (isZodUnionSchema(schema)) {
+    const leaves = collectLeafObjects(schema);
     const mergedShape: Record<string, z.ZodType> = {};
-    for (const option of schema.options) {
-      const shape = option.shape;
+    for (const leaf of leaves) {
+      const shape = leaf.shape;
       for (const [key, value] of Object.entries(shape)) {
         if (!(key in mergedShape) && isZodSchema(value)) {
           mergedShape[key] = value;
@@ -362,6 +487,8 @@ function hasPathInObject(obj: z.ZodObject<z.ZodRawShape>, path: string): boolean
   const parts = path.split('.').filter(Boolean);
   let current: unknown = obj;
   for (const p of parts) {
+    const { inner } = resolveSchemaForTraversal(current);
+    current = inner;
     if (!isZodObjectSchema(current)) return false;
     const shape = getObjectShape(current);
     const next = shape[p];
@@ -389,15 +516,43 @@ function deepPartial(schema: z.ZodObject<z.ZodRawShape>): z.ZodObject<z.ZodRawSh
 }
 
 /**
- * Project a DataSchema preserving the union structure.
+ * Project a DataSchema preserving the union structure (including nested unions).
  * - ZodObject → delegates to `projectDataSchema`.
  * - ZodUnion / ZodDiscriminatedUnion → projects each option independently
  *   (paths that don't exist in a given option are skipped) and returns `z.union([...])`.
+ *   If an option is itself a union, recurse into it preserving the nested structure.
  *
  * When `partial` is true, a recursive deep partial is applied to each projected option
  * **before** wrapping in the union, so you get
  * `z.union([deepPartial(OptionA), deepPartial(OptionB)])` instead of a single merged partial.
  */
+
+/** Internal helper: project a nested union that may not match the DataSchema type exactly. */
+function projectNestedUnion(
+  schema: { options: (z.ZodObject<z.ZodRawShape> | z.ZodType)[] } & z.ZodType,
+  selectedPaths: string[],
+  opts?: { partial?: boolean },
+): z.ZodType {
+  const projected: z.ZodType[] = schema.options.map((option) => {
+    if (isZodUnionSchema(option) && !isZodObjectSchema(option)) {
+      return projectNestedUnion(option, selectedPaths, opts);
+    }
+    if (!isZodObjectSchema(option)) {
+      throw new Error('Union option is neither a ZodObject nor a ZodUnion');
+    }
+    const validPaths = selectedPaths.filter((p) => hasPathInObject(option, p));
+    const obj = validPaths.length > 0 ? projectDataSchema(option, validPaths) : z.object({});
+    return opts?.partial ? deepPartial(obj) : obj;
+  });
+
+  const first = projected[0];
+  const second = projected[1];
+  if (!first || !second) {
+    throw new Error('Union must have at least 2 options');
+  }
+  return z.union([first, second, ...projected.slice(2)]);
+}
+
 export function projectDataSchemaPreservingUnion(
   dataSchema: DataSchema,
   selectedPaths: string[],
@@ -409,18 +564,7 @@ export function projectDataSchemaPreservingUnion(
   }
 
   if (isZodUnionSchema(dataSchema)) {
-    const projected = dataSchema.options.map((option) => {
-      const validPaths = selectedPaths.filter((p) => hasPathInObject(option, p));
-      const obj = validPaths.length > 0 ? projectDataSchema(option, validPaths) : z.object({});
-      return options?.partial ? deepPartial(obj) : obj;
-    });
-
-    const first = projected[0];
-    const second = projected[1];
-    if (!first || !second) {
-      throw new Error('Union must have at least 2 options');
-    }
-    return z.union([first, second, ...projected.slice(2)]);
+    return projectNestedUnion(dataSchema, selectedPaths, options);
   }
 
   throw new Error(
@@ -434,6 +578,9 @@ export function getZodAtPath(obj: DataSchema, path: string): z.ZodType {
   let current: unknown = resolveToZodObject(obj);
 
   for (const p of parts) {
+    const { inner } = resolveSchemaForTraversal(current);
+    current = inner;
+
     if (!isZodObjectSchema(current)) {
       throw new Error(`dataSchema path "${path}" is invalid: "${p}" is not inside a ZodObject`);
     }
@@ -461,6 +608,8 @@ export function projectDataSchema(
   selectedPaths: string[],
 ): z.ZodObject<z.ZodRawShape> {
   const tree: Record<string, unknown> = {};
+  const arrayPaths = new Set<string>();
+  const optionalPaths = new Set<string>();
 
   const ensureTreeNode = (node: Record<string, unknown>, key: string): Record<string, unknown> => {
     const existing = node[key];
@@ -486,11 +635,33 @@ export function projectDataSchema(
 
     let cursor = tree;
 
+    // Walk the original schema alongside the tree to detect array/optional wrappers
+    let schemaWalk: unknown = resolveToZodObject(dataSchema);
+
     for (let i = 0; i < parts.length; i += 1) {
       const key = parts[i];
       if (!key) continue;
 
       const isLeaf = i === parts.length - 1;
+
+      // Resolve schemaWalk to a traversable ZodObject
+      const { inner } = resolveSchemaForTraversal(schemaWalk);
+      schemaWalk = inner;
+
+      if (isZodObjectSchema(schemaWalk)) {
+        const shape = getObjectShape(schemaWalk);
+        const rawField = shape[key];
+
+        if (rawField && isZodSchema(rawField)) {
+          const partialPath = parts.slice(0, i + 1).join('.');
+          const wrapInfo = resolveSchemaForTraversal(rawField);
+          if (wrapInfo.isArray) arrayPaths.add(partialPath);
+          if (wrapInfo.isOptional) optionalPaths.add(partialPath);
+
+          // Advance schema walk to the unwrapped inner for next iteration
+          schemaWalk = isLeaf ? rawField : wrapInfo.inner;
+        }
+      }
 
       if (isLeaf) {
         cursor[key] = getZodAtPath(dataSchema, fullPath);
@@ -500,16 +671,24 @@ export function projectDataSchema(
     }
   }
 
-  const buildObjectFromTree = (node: Record<string, unknown>): z.ZodObject<z.ZodRawShape> => {
+  const buildObjectFromTree = (
+    node: Record<string, unknown>,
+    parentPath: string,
+  ): z.ZodObject<z.ZodRawShape> => {
     const shape: MutableShape = {};
 
     for (const [k, v] of Object.entries(node)) {
+      const childPath = parentPath ? `${parentPath}.${k}` : k;
+
       if (isZodSchema(v)) {
         shape[k] = v;
         continue;
       }
       if (isPlainObject(v)) {
-        shape[k] = buildObjectFromTree(v);
+        let built: z.ZodType = buildObjectFromTree(v, childPath);
+        if (arrayPaths.has(childPath)) built = z.array(built);
+        if (optionalPaths.has(childPath)) built = built.optional();
+        shape[k] = built;
         continue;
       }
       throw new Error(`Invalid projection tree at "${k}"`);
@@ -518,7 +697,7 @@ export function projectDataSchema(
     return z.object(shape);
   };
 
-  return buildObjectFromTree(tree);
+  return buildObjectFromTree(tree, '');
 }
 
 /* ---------------------------------- */
@@ -719,9 +898,12 @@ export function select<
           // Check nested discriminated unions
           if (!hasWildcard) {
             for (const nested of nestedDiscriminators) {
-              const hasAnyFieldUnderPrefix = selectForValidation.some(
-                (f) => f === nested.prefix || f.startsWith(`${nested.prefix}.`),
-              );
+              const hasAnyFieldUnderPrefix =
+                nested.prefix === ''
+                  ? selectForValidation.length > 0
+                  : selectForValidation.some(
+                      (f) => f === nested.prefix || f.startsWith(`${nested.prefix}.`),
+                    );
               if (
                 hasAnyFieldUnderPrefix &&
                 !selectForValidation.includes(nested.discriminatorPath)

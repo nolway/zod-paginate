@@ -718,49 +718,53 @@ function isFiniteNumber(v: unknown): boolean {
 
 function validateConditionType(expected: FieldType, cond: Condition, field: string): string | null {
   if (expected === 'any') return null;
-  if (cond.op === '$null') return null;
 
-  if (cond.op === '$eq') {
-    if (expected === 'number' && !isFiniteNumber(cond.value))
-      return `Field "${field}" expects a number for "$eq"`;
-    if (expected === 'date' && !isISODateString(cond.value))
-      return `Field "${field}" expects an ISO date for "$eq"`;
-    if (expected === 'string' && typeof cond.value !== 'string')
-      return `Field "${field}" expects a string for "$eq"`;
-    return null;
+  switch (cond.op) {
+    case '$null':
+      return null;
+
+    case '$eq':
+      if (expected === 'number' && !isFiniteNumber(cond.value))
+        return `Field "${field}" expects a number for "$eq"`;
+      if (expected === 'date' && !isISODateString(cond.value))
+        return `Field "${field}" expects an ISO date for "$eq"`;
+      if (expected === 'string' && typeof cond.value !== 'string')
+        return `Field "${field}" expects a string for "$eq"`;
+      return null;
+
+    case '$ilike':
+    case '$sw':
+      if (expected !== 'string')
+        return `Field "${field}" does not support "${cond.op}" (configured as ${expected})`;
+      return null;
+
+    case '$in':
+    case '$contains':
+      return null;
+
+    case '$gt':
+    case '$gte':
+    case '$lt':
+    case '$lte':
+      if (expected === 'string')
+        return `Field "${field}" does not support "${cond.op}" (configured as string)`;
+      if (expected === 'number' && !isFiniteNumber(cond.value))
+        return `Field "${field}" expects number for "${cond.op}"`;
+      if (expected === 'date' && !isISODateString(cond.value))
+        return `Field "${field}" expects ISO date for "${cond.op}"`;
+      return null;
+
+    case '$btw': {
+      const [a, b] = cond.value;
+      if (expected === 'string')
+        return `Field "${field}" does not support "$btw" (configured as string)`;
+      if (expected === 'number' && (!isFiniteNumber(a) || !isFiniteNumber(b)))
+        return `Field "${field}" expects numbers for "$btw"`;
+      if (expected === 'date' && (!isISODateString(a) || !isISODateString(b)))
+        return `Field "${field}" expects ISO dates for "$btw"`;
+      return null;
+    }
   }
-
-  if (cond.op === '$ilike' || cond.op === '$sw') {
-    if (expected !== 'string')
-      return `Field "${field}" does not support "${cond.op}" (configured as ${expected})`;
-    return null;
-  }
-
-  if (cond.op === '$in' || cond.op === '$contains') return null;
-
-  if (cond.op === '$gt' || cond.op === '$gte' || cond.op === '$lt' || cond.op === '$lte') {
-    if (expected === 'string')
-      return `Field "${field}" does not support "${cond.op}" (configured as string)`;
-    if (expected === 'number' && !isFiniteNumber(cond.value))
-      return `Field "${field}" expects number for "${cond.op}"`;
-    if (expected === 'date' && !isISODateString(cond.value))
-      return `Field "${field}" expects ISO date for "${cond.op}"`;
-    return null;
-  }
-
-  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-  if (cond.op === '$btw') {
-    const [a, b] = cond.value;
-    if (expected === 'string')
-      return `Field "${field}" does not support "$btw" (configured as string)`;
-    if (expected === 'number' && (!isFiniteNumber(a) || !isFiniteNumber(b)))
-      return `Field "${field}" expects numbers for "$btw"`;
-    if (expected === 'date' && (!isISODateString(a) || !isISODateString(b)))
-      return `Field "${field}" expects ISO dates for "$btw"`;
-    return null;
-  }
-
-  return null;
 }
 
 /* ---------------------------------- */
@@ -946,13 +950,10 @@ export type PaginationResponseSchemaShape<TType extends PaginationType> =
  *   return paginate({ dataSchema: MySchema, … });
  * }
  */
-/* eslint-disable @typescript-eslint/no-unused-vars */
 export interface PaginateResult<
   TSchema extends DataSchema,
-  TSelectable extends AllowedPath<TSchema> = AllowedPath<TSchema>,
   TType extends PaginationType = PaginationType,
 > {
-  /* eslint-enable @typescript-eslint/no-unused-vars */
   queryParamsSchema: {
     (): z.ZodType<PaginationQueryParams<TSchema, TType>>;
     <TExtraShape extends z.ZodRawShape>(
@@ -1202,7 +1203,7 @@ export function paginate<
         >;
       }>;
     },
-): PaginateResult<TSchema, TSelectable[number], 'LIMIT_OFFSET'>;
+): PaginateResult<TSchema, 'LIMIT_OFFSET'>;
 
 export function paginate<
   TSchema extends DataSchema,
@@ -1226,7 +1227,7 @@ export function paginate<
         >;
       }>;
     },
-): PaginateResult<TSchema, TSelectable[number], 'CURSOR'>;
+): PaginateResult<TSchema, 'CURSOR'>;
 
 export function paginate<
   TSchema extends DataSchema,
@@ -1249,7 +1250,7 @@ export function paginate<
       >;
     }>;
   } & (LimitOffsetPaginationConfig | CursorPaginationConfig<InferData<TSchema>>),
-): PaginateResult<TSchema, TSelectable[number]>;
+): PaginateResult<TSchema>;
 
 export function paginate<
   TSchema extends DataSchema,
@@ -1272,7 +1273,7 @@ export function paginate<
       >;
     }>;
   } & (LimitOffsetPaginationConfig | CursorPaginationConfig<InferData<TSchema>>),
-): PaginateResult<TSchema, TSelectable[number]> {
+): PaginateResult<TSchema> {
   const discriminatorKey = getDiscriminatorKey(config.dataSchema);
   const nestedDiscriminators = findNestedDiscriminators(config.dataSchema);
 
@@ -1506,9 +1507,12 @@ export function paginate<
             // Check nested discriminated unions
             if (!hasWildcard) {
               for (const nested of nestedDiscriminators) {
-                const hasAnyFieldUnderPrefix = selectForValidation.some(
-                  (f) => f === nested.prefix || f.startsWith(`${nested.prefix}.`),
-                );
+                const hasAnyFieldUnderPrefix =
+                  nested.prefix === ''
+                    ? selectForValidation.length > 0
+                    : selectForValidation.some(
+                        (f) => f === nested.prefix || f.startsWith(`${nested.prefix}.`),
+                      );
                 if (
                   hasAnyFieldUnderPrefix &&
                   !selectForValidation.includes(nested.discriminatorPath)
