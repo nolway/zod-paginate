@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.8.0](https://github.com/nolway/zod-paginate/compare/v1.7.1...v1.8.0) (2026-04-11)
+
+
+### Features
+
+* add select response type types ([d5f8eef](https://github.com/nolway/zod-paginate/commit/d5f8eeffcc2125f2154145c9af0e7e684b72aae9))
+
+
+### Miscellaneous Chores
+
+* release 1.8.0 ([c858523](https://github.com/nolway/zod-paginate/commit/c858523fc2b5e948407caec9676befab6bd5dfe2))
+
 ## [1.7.1](https://github.com/nolway/zod-paginate/compare/v1.7.0...v1.7.1) (2026-04-11)
 
 
