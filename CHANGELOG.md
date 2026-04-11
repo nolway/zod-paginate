@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.9.0](https://github.com/nolway/zod-paginate/compare/v1.8.0...v1.9.0) (2026-04-11)
+
+
+### Features
+
+* add generic on select to propagate responseType ([22240c5](https://github.com/nolway/zod-paginate/commit/22240c58c56509b363b408ff01e85822ca208300))
+
+
+### Miscellaneous Chores
+
+* release 1.9.0 ([605fe24](https://github.com/nolway/zod-paginate/commit/605fe24f05b9478df55030db1b8662b6631f57d4))
+
 ## [1.8.0](https://github.com/nolway/zod-paginate/compare/v1.7.1...v1.8.0) (2026-04-11)
 
 
