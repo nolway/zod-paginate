@@ -137,11 +137,14 @@ export const SelectSchema = z
 /* Select config (shared) */
 /* ---------------------------------- */
 
+/** Selectable fields configuration shared between `select()` and `paginate()` internals. */
 export interface SelectableConfig<
   TSchema extends DataSchema,
   TSelect extends AllowedPath<TSchema> = AllowedPath<TSchema>,
 > {
+  /** Allowlist of selectable fields (dot-notation paths supported). */
   selectable?: readonly TSelect[];
+  /** Default fields returned when `select` is omitted. Use `"*"` to select all. */
   defaultSelect: readonly TSelect[] | '*';
 }
 
@@ -704,14 +707,19 @@ export function projectDataSchema(
 /* Config */
 /* ---------------------------------- */
 
+/** Configuration for the `select()` factory. */
 export interface SelectConfig<
   TSchema extends DataSchema,
   TSelect extends AllowedPath<TSchema> = AllowedPath<TSchema>,
   TResponseType extends SelectResponseType = 'many',
 > {
+  /** Zod schema representing one data item (object, discriminated union, or union). */
   dataSchema: TSchema;
+  /** Allowlist of selectable fields (dot-notation paths supported). */
   selectable: readonly TSelect[];
+  /** Default fields returned when `select` is omitted from the query. Use `"*"` to select all. */
   defaultSelect: readonly TSelect[] | '*';
+  /** Shape of `data` in the response: `"many"` returns an array, `"one"` returns a single object. @default "many" */
   responseType?: TResponseType;
 }
 
@@ -823,7 +831,9 @@ export function select<
     SelectConfig<TSchema, TSelectable[number], TResponseType>,
     'selectable' | 'defaultSelect'
   > & {
+    /** Allowlist of selectable fields (dot-notation paths). Enables the `select` query parameter. */
     selectable: EnsureDiscriminatorInSelectable<TSchema, TSelectable>;
+    /** Default fields returned when `select` is omitted. Use `"*"` to select all. */
     defaultSelect: readonly NoInfer<TSelectable[number]>[] | '*';
   },
 ): SelectResult<TSchema, TSelectable[number]> {

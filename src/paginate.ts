@@ -35,11 +35,14 @@ type QueryStringRecord = Record<string, QueryStringValue>;
 /* ---------------------------------- */
 
 interface LimitOffsetPaginationConfig {
+  /** Pagination mode: classic limit/offset with page numbers. */
   paginationType: 'LIMIT_OFFSET';
 }
 
 interface CursorPaginationConfig<T> {
+  /** Pagination mode: cursor-based (keyset). */
   paginationType: 'CURSOR';
+  /** Field used as cursor. Its Zod type determines cursor coercion (number, string, or ISO date). */
   cursorProperty: Path<T>;
 }
 
@@ -643,25 +646,34 @@ interface FilterableFieldConfig<TKind extends FieldType> {
   ops: readonly OpsForFieldType<TKind>[];
 }
 
+/** Configuration shared by all pagination modes. */
 export interface CommonQueryConfigFromSchema<
   TSchema extends DataSchema,
   TSelectable extends AllowedPath<TSchema> = AllowedPath<TSchema>,
 > {
+  /** Zod schema representing one data item (object, discriminated union, or union). */
   dataSchema: TSchema;
 
+  /** Allowlist of selectable fields (dot-notation paths). Enables the `select` query parameter. */
   selectable: readonly TSelectable[];
+  /** Allowlist of sortable fields. Enables the `sortBy` query parameter. Unknown sort fields are rejected. */
   sortable?: readonly AllowedPath<TSchema>[];
 
+  /** Map of filterable fields to their allowed type and operators. Enables the `filter.*` query parameters. */
   filterable?: Partial<{
     [P in AllowedPath<TSchema>]: FilterableFieldConfig<
       FieldTypeFromValue<PathValue<InferData<TSchema>, P>>
     >;
   }>;
 
+  /** Default sort order applied when `sortBy` is omitted from the query. */
   defaultSortBy?: readonly { property: AllowedPath<TSchema>; direction: SortDirection }[];
+  /** Default number of items per page when `limit` is omitted. */
   defaultLimit: number;
 
+  /** Default fields returned when `select` is omitted. Use `"*"` to select all. */
   defaultSelect: readonly TSelectable[] | '*';
+  /** Maximum allowed value for `limit`. Requests exceeding this are rejected. */
   maxLimit: number;
 }
 
@@ -1195,13 +1207,18 @@ export function paginate<
     'selectable' | 'defaultSelect' | 'sortable' | 'defaultSortBy' | 'filterable'
   > &
     LimitOffsetPaginationConfig & {
+      /** Allowlist of selectable fields (dot-notation paths). Enables the `select` query parameter. */
       selectable: EnsureDiscriminatorInSelectable<TSchema, TSelectable>;
+      /** Default fields returned when `select` is omitted. Use `"*"` to select all. */
       defaultSelect: readonly NoInfer<TSelectable[number]>[] | '*';
+      /** Allowlist of sortable fields. Enables the `sortBy` query parameter. Unknown sort fields are rejected. */
       sortable?: readonly NoInfer<TSelectable[number]>[];
+      /** Default sort order applied when `sortBy` is omitted from the query. */
       defaultSortBy?: readonly {
         property: NoInfer<TSelectable[number]>;
         direction: SortDirection;
       }[];
+      /** Map of filterable fields to their allowed type and operators. Enables the `filter.*` query parameters. */
       filterable?: Partial<{
         [P in NoInfer<TSelectable[number]>]: FilterableFieldConfig<
           FieldTypeFromValue<PathValue<InferData<TSchema>, P>>
@@ -1219,13 +1236,18 @@ export function paginate<
     'selectable' | 'defaultSelect' | 'sortable' | 'defaultSortBy' | 'filterable'
   > &
     CursorPaginationConfig<InferData<TSchema>> & {
+      /** Allowlist of selectable fields (dot-notation paths). Enables the `select` query parameter. */
       selectable: EnsureDiscriminatorInSelectable<TSchema, TSelectable>;
+      /** Default fields returned when `select` is omitted. Use `"*"` to select all. */
       defaultSelect: readonly NoInfer<TSelectable[number]>[] | '*';
+      /** Allowlist of sortable fields. Enables the `sortBy` query parameter. Unknown sort fields are rejected. */
       sortable?: readonly NoInfer<TSelectable[number]>[];
+      /** Default sort order applied when `sortBy` is omitted from the query. */
       defaultSortBy?: readonly {
         property: NoInfer<TSelectable[number]>;
         direction: SortDirection;
       }[];
+      /** Map of filterable fields to their allowed type and operators. Enables the `filter.*` query parameters. */
       filterable?: Partial<{
         [P in NoInfer<TSelectable[number]>]: FilterableFieldConfig<
           FieldTypeFromValue<PathValue<InferData<TSchema>, P>>
@@ -1242,13 +1264,18 @@ export function paginate<
     CommonQueryConfigFromSchema<TSchema, TSelectable[number]>,
     'selectable' | 'defaultSelect' | 'sortable' | 'defaultSortBy' | 'filterable'
   > & {
+    /** Allowlist of selectable fields (dot-notation paths). Enables the `select` query parameter. */
     selectable: EnsureDiscriminatorInSelectable<TSchema, TSelectable>;
+    /** Default fields returned when `select` is omitted. Use `"*"` to select all. */
     defaultSelect: readonly NoInfer<TSelectable[number]>[] | '*';
+    /** Allowlist of sortable fields. Enables the `sortBy` query parameter. Unknown sort fields are rejected. */
     sortable?: readonly NoInfer<TSelectable[number]>[];
+    /** Default sort order applied when `sortBy` is omitted from the query. */
     defaultSortBy?: readonly {
       property: NoInfer<TSelectable[number]>;
       direction: SortDirection;
     }[];
+    /** Map of filterable fields to their allowed type and operators. Enables the `filter.*` query parameters. */
     filterable?: Partial<{
       [P in NoInfer<TSelectable[number]>]: FilterableFieldConfig<
         FieldTypeFromValue<PathValue<InferData<TSchema>, P>>
@@ -1265,13 +1292,18 @@ export function paginate<
     CommonQueryConfigFromSchema<TSchema, TSelectable[number]>,
     'selectable' | 'defaultSelect' | 'sortable' | 'defaultSortBy' | 'filterable'
   > & {
+    /** Allowlist of selectable fields (dot-notation paths). Enables the `select` query parameter. */
     selectable: EnsureDiscriminatorInSelectable<TSchema, TSelectable>;
+    /** Default fields returned when `select` is omitted. Use `"*"` to select all. */
     defaultSelect: readonly TSelectable[number][] | '*';
+    /** Allowlist of sortable fields. Enables the `sortBy` query parameter. Unknown sort fields are rejected. */
     sortable?: readonly TSelectable[number][];
+    /** Default sort order applied when `sortBy` is omitted from the query. */
     defaultSortBy?: readonly {
       property: TSelectable[number];
       direction: SortDirection;
     }[];
+    /** Map of filterable fields to their allowed type and operators. Enables the `filter.*` query parameters. */
     filterable?: Partial<{
       [P in TSelectable[number]]: FilterableFieldConfig<
         FieldTypeFromValue<PathValue<InferData<TSchema>, P>>
