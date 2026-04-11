@@ -782,8 +782,9 @@ export type SelectManyQueryPayload<
 export interface SelectQueryParams<
   TSchema extends DataSchema,
   TSelect extends AllowedPath<TSchema> = AllowedPath<TSchema>,
+  TResponseType extends SelectResponseType = SelectResponseType,
 > {
-  select: SelectQueryPayload<TSchema, TSelect>;
+  select: SelectQueryPayload<TSchema, TSelect, TResponseType>;
 }
 
 export type SelectResponseData<
@@ -829,10 +830,12 @@ export interface SelectResult<
   TResponseType extends SelectResponseType = SelectResponseType,
 > {
   queryParamsSchema: {
-    (): z.ZodType<SelectQueryParams<TSchema, TSelectable>>;
+    (): z.ZodType<SelectQueryParams<TSchema, TSelectable, TResponseType>>;
     <TExtraShape extends z.ZodRawShape>(
       extraShape: TExtraShape,
-    ): z.ZodType<SelectQueryParams<TSchema, TSelectable> & z.infer<z.ZodObject<TExtraShape>>>;
+    ): z.ZodType<
+      SelectQueryParams<TSchema, TSelectable, TResponseType> & z.infer<z.ZodObject<TExtraShape>>
+    >;
   };
   validatorSchema: (
     parsed?: SelectQueryPayload<TSchema, TSelectable>,
