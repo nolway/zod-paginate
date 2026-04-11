@@ -694,7 +694,7 @@ describe('Integration: select() full flow', () => {
     const { queryParamsSchema, validatorSchema } = setup();
 
     const parsed = queryParamsSchema().parse({ select: 'id,username,profile.settings.theme' });
-    const v = validatorSchema(parsed);
+    const v = validatorSchema(parsed.select);
 
     expect(() =>
       v.parse({
@@ -716,7 +716,7 @@ describe('Integration: select() full flow', () => {
     const parsed = queryParamsSchema().parse({});
     expect(parsed.select.fields).toEqual(['id', 'username', 'email']);
 
-    const v = validatorSchema(parsed);
+    const v = validatorSchema(parsed.select);
 
     expect(() =>
       v.parse({
@@ -760,7 +760,7 @@ describe('Integration: select() full flow', () => {
       'profile.settings.theme',
     ]);
 
-    const v = validatorSchema(parsed);
+    const v = validatorSchema(parsed.select);
 
     expect(() =>
       v.parse({
@@ -781,7 +781,7 @@ describe('Integration: select() full flow', () => {
   it('validates empty array is always valid', () => {
     const { queryParamsSchema, validatorSchema } = setup();
     const parsed = queryParamsSchema().parse({});
-    const v = validatorSchema(parsed);
+    const v = validatorSchema(parsed.select);
 
     expect(() => v.parse({ data: [] })).not.toThrow();
   });

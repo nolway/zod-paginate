@@ -762,10 +762,15 @@ export interface SelectQueryPayload<
   TSchema extends DataSchema,
   TSelect extends AllowedPath<TSchema> = AllowedPath<TSchema>,
 > {
-  select: {
-    fields: TSelect[];
-    responseType?: SelectResponseType;
-  };
+  fields: TSelect[];
+  responseType?: SelectResponseType;
+}
+
+export interface SelectQueryParams<
+  TSchema extends DataSchema,
+  TSelect extends AllowedPath<TSchema> = AllowedPath<TSchema>,
+> {
+  select: SelectQueryPayload<TSchema, TSelect>;
 }
 
 export type SelectResponseData<
@@ -798,10 +803,10 @@ export interface SelectResult<
   TSelectable extends AllowedPath<TSchema> = AllowedPath<TSchema>,
 > {
   queryParamsSchema: {
-    (): z.ZodType<SelectQueryPayload<TSchema, TSelectable>>;
+    (): z.ZodType<SelectQueryParams<TSchema, TSelectable>>;
     <TExtraShape extends z.ZodRawShape>(
       extraShape: TExtraShape,
-    ): z.ZodType<SelectQueryPayload<TSchema, TSelectable> & z.infer<z.ZodObject<TExtraShape>>>;
+    ): z.ZodType<SelectQueryParams<TSchema, TSelectable> & z.infer<z.ZodObject<TExtraShape>>>;
   };
   validatorSchema: (
     parsed?: SelectQueryPayload<TSchema, TSelectable>,
@@ -868,7 +873,7 @@ export function select<
       }),
   };
 
-  const baseQueryParamsSchema: z.ZodType<SelectQueryPayload<TSchema, TSelectable[number]>> = z
+  const baseQueryParamsSchema: z.ZodType<SelectQueryParams<TSchema, TSelectable[number]>> = z
     .object(rootShape)
     .catchall(z.unknown())
     .transform((q): Record<string, unknown> => {
@@ -946,7 +951,7 @@ export function select<
             }
           }
         })
-        .transform((val): SelectQueryPayload<TSchema, TSelectable[number]> => {
+        .transform((val): SelectQueryParams<TSchema, TSelectable[number]> => {
           const resolved = computeSelect(val.select, effectiveConfig);
 
           if (!resolved || resolved.length === 0) {
@@ -968,7 +973,7 @@ export function select<
   ): z.ZodType<SelectResponse<TSchema, TSelectable[number]>>;
   function validatorSchema(parsed?: SelectQueryPayload<TSchema, TSelectable[number]>): z.ZodType {
     const effectiveSelect =
-      parsed?.select.fields ?? computeSelect(undefined, effectiveConfig) ?? undefined;
+      parsed?.fields ?? computeSelect(undefined, effectiveConfig) ?? undefined;
 
     const dataItemSchema: z.ZodType =
       effectiveSelect && effectiveSelect.length > 0
@@ -992,12 +997,10 @@ export function select<
   }
   const responseSchema = buildResponseSchema();
 
-  function queryParamsSchema(): z.ZodType<SelectQueryPayload<TSchema, TSelectable[number]>>;
+  function queryParamsSchema(): z.ZodType<SelectQueryParams<TSchema, TSelectable[number]>>;
   function queryParamsSchema<TExtraShape extends z.ZodRawShape>(
     extraShape: TExtraShape,
-  ): z.ZodType<
-    SelectQueryPayload<TSchema, TSelectable[number]> & z.infer<z.ZodObject<TExtraShape>>
-  >;
+  ): z.ZodType<SelectQueryParams<TSchema, TSelectable[number]> & z.infer<z.ZodObject<TExtraShape>>>;
   function queryParamsSchema<TExtraShape extends z.ZodRawShape>(
     extraShape?: TExtraShape,
   ): z.ZodType {

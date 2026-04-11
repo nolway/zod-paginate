@@ -127,7 +127,7 @@ describe('select', () => {
     const { queryParamsSchema, validatorSchema } = makeSelect();
 
     const parsed = queryParamsSchema().parse({});
-    const v = validatorSchema(parsed);
+    const v = validatorSchema(parsed.select);
 
     // All fields present => valid
     expect(() =>
@@ -161,7 +161,7 @@ describe('select', () => {
     const { queryParamsSchema, validatorSchema } = makeSelect();
 
     const parsed = queryParamsSchema().parse({ select: 'id,status' });
-    const v = validatorSchema(parsed);
+    const v = validatorSchema(parsed.select);
 
     // id + status present => valid
     expect(() =>
@@ -182,7 +182,7 @@ describe('select', () => {
     const { queryParamsSchema, validatorSchema } = makeSelect();
 
     const parsed = queryParamsSchema().parse({ select: 'id,meta.score' });
-    const v = validatorSchema(parsed);
+    const v = validatorSchema(parsed.select);
 
     // id + meta.score present => valid
     expect(() =>
@@ -230,7 +230,7 @@ describe('select', () => {
     const { queryParamsSchema, validatorSchema } = makeSelectWithPartialDefault();
 
     const parsed = queryParamsSchema().parse({});
-    const v = validatorSchema(parsed);
+    const v = validatorSchema(parsed.select);
 
     // id + status present => valid
     expect(() =>
@@ -476,7 +476,7 @@ describe('select with ZodDiscriminatedUnion', () => {
 
   it('validates response against discriminated union', () => {
     const { validatorSchema } = makeUnionSelect();
-    const schema = validatorSchema({ select: { fields: ['id', 'name', 'type'] } });
+    const schema = validatorSchema({ fields: ['id', 'name', 'type'] });
     const result = schema.safeParse({ data: [{ id: 1, name: 'test', type: 'video' }] });
     expect(result.success).toBe(true);
   });
@@ -512,7 +512,7 @@ describe('select with ZodDiscriminatedUnion', () => {
       defaultSelect: '*',
     });
 
-    const schema = s.validatorSchema({ select: { fields: ['id', 'type', 'duration', 'bitrate'] } });
+    const schema = s.validatorSchema({ fields: ['id', 'type', 'duration', 'bitrate'] });
 
     // Video item has duration but no bitrate → valid (matches Video option)
     expect(schema.safeParse({ data: [{ id: 1, type: 'video', duration: 120 }] }).success).toBe(
@@ -551,7 +551,7 @@ describe('select with ZodDiscriminatedUnion', () => {
       defaultSelect: '*',
     });
 
-    const schema = s.validatorSchema({ select: { fields: ['id', 'type', 'duration', 'bitrate'] } });
+    const schema = s.validatorSchema({ fields: ['id', 'type', 'duration', 'bitrate'] });
 
     // Object with wrong type value → rejected by both options
     expect(schema.safeParse({ data: [{ id: 1, type: 'unknown', duration: 10 }] }).success).toBe(
@@ -667,7 +667,7 @@ describe('select with responseType object', () => {
   it('validatorSchema: validates a single object', () => {
     const { validatorSchema } = makeObjectSelect();
 
-    const v = validatorSchema({ select: { fields: ['id', 'status'] } });
+    const v = validatorSchema({ fields: ['id', 'status'] });
 
     expect(() => v.parse({ data: { id: 1, status: 'active' } })).not.toThrow();
   });
@@ -675,7 +675,7 @@ describe('select with responseType object', () => {
   it('validatorSchema: rejects an array', () => {
     const { validatorSchema } = makeObjectSelect();
 
-    const v = validatorSchema({ select: { fields: ['id', 'status'] } });
+    const v = validatorSchema({ fields: ['id', 'status'] });
 
     expect(() => v.parse({ data: [{ id: 1, status: 'active' }] })).toThrow();
   });
@@ -735,7 +735,7 @@ describe('select with plain z.union()', () => {
       defaultSelect: '*',
     });
 
-    const schema = s.validatorSchema({ select: { fields: ['id', 'name', 'title'] } });
+    const schema = s.validatorSchema({ fields: ['id', 'name', 'title'] });
 
     // SchemaA match → valid
     expect(schema.safeParse({ data: [{ id: 1, name: 'test' }] }).success).toBe(true);
@@ -1099,7 +1099,7 @@ describe('nested discriminated unions (union of unions)', () => {
       const parsed = s
         .queryParamsSchema()
         .parse({ select: 'status,materialType,uuid,videoId,duration,bitrate' });
-      const schema = s.validatorSchema(parsed);
+      const schema = s.validatorSchema(parsed.select);
 
       expect(
         schema.safeParse({
@@ -1274,7 +1274,7 @@ describe('array element path support', () => {
         defaultSelect: ['id', 'tags.name'],
       });
       const parsed = s.queryParamsSchema().parse({ select: 'id,tags.meta.score' });
-      const schema = s.validatorSchema(parsed);
+      const schema = s.validatorSchema(parsed.select);
       expect(schema.safeParse({ data: [{ id: 1, tags: [{ meta: { score: 5 } }] }] }).success).toBe(
         true,
       );
@@ -1320,7 +1320,7 @@ describe('array element path support', () => {
       const parsed = s.queryParamsSchema().parse({});
       expect(parsed.select.fields).toEqual(['type', 'items.name']);
 
-      const schema = s.validatorSchema(parsed);
+      const schema = s.validatorSchema(parsed.select);
       expect(schema).toBeDefined();
     });
 

@@ -16,7 +16,7 @@ It is designed for Node.js HTTP stacks where query parameters arrive as strings 
 - **CURSOR pagination** with cursor coercion based on `cursorProperty` (number / string / ISO date string).
 - **Sorting** with an allowlist of sortable fields.
 - **Filter DSL** with `$` operators and **nested AND/OR grouping**.
-- **Response validation** — `responseSchema` is a generic schema covering all possible responses based on your config; `validatorSchema(parsed)` validates outgoing data projected to the actual requested `select`. `z.infer<typeof responseSchema>` gives you **key autocompletion** narrowed to configured `selectable` paths.
+- **Response validation** — `responseSchema` is a generic schema covering all possible responses based on your config; `validatorSchema(parsed.select)` validates outgoing data projected to the actual requested `select`. `z.infer<typeof responseSchema>` gives you **key autocompletion** narrowed to configured `selectable` paths.
 - **Discriminated union support** — `z.discriminatedUnion()` and `z.union()` as `dataSchema`, with compile-time and runtime discriminator enforcement.
 - **Standalone `select()`** utility for field-projection-only use cases.
 - Compatible with **OpenAPI tooling** ([zod-openapi](https://github.com/samchungy/zod-openapi) etc.).
@@ -60,7 +60,7 @@ responseSchema.parse({
 });
 
 // Outgoing data validator — projected to the actual requested select
-const contextSchema = validatorSchema(parsed);
+const contextSchema = validatorSchema(parsed.select);
 contextSchema.parse({
   data: [{ id: 1, name: "Widget", price: 9.99 }],
 });
@@ -608,7 +608,7 @@ const { queryParamsSchema, validatorSchema } = select({
 });
 
 const parsed = queryParamsSchema().parse({ select: "id,type,duration,bitrate" });
-const schema = validatorSchema(parsed);
+const schema = validatorSchema(parsed.select);
 
 // ✓ Video item — matches VideoSchema option
 schema.parse({ data: [{ id: 1, type: "video", duration: 120 }] });
@@ -767,7 +767,8 @@ export function select<
 | `AllowedPath<TSchema>` | All valid dot-notation paths for a given schema |
 | `SelectConfig<TSchema, TSelectable>` | Configuration for `select()` |
 | `SelectResult<TSchema, TSelectable>` | Return type of `select()` |
-| `SelectQueryPayload<TSchema, TSelectable>` | Parsed output of `select()` — `{ select: { fields, responseType? } }` |
+| `SelectQueryParams<TSchema, TSelectable>` | Parsed output of `select()` — `{ select: SelectQueryPayload }` |
+| `SelectQueryPayload<TSchema, TSelectable>` | Inner select payload — `{ fields, responseType? }`. Passed to `validatorSchema()`. |
 | `TypedProjectedData<TSchema, TSelect>` | Projected data item with real value types (used in response types) |
 | `ProjectedData<TSchema, TSelect>` | Projected data item with `unknown` values (key autocompletion only) |
 | `PaginateResult<TSchema, TSelectable?, TType?>` | Return type of `paginate()` |
