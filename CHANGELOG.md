@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.7.1](https://github.com/nolway/zod-paginate/compare/v1.7.0...v1.7.1) (2026-04-11)
+
+
+### Bug Fixes
+
+* iso typing on paginate and select ([b30a011](https://github.com/nolway/zod-paginate/commit/b30a011b267d3e2e87c56fbaa7a3281e20a02bda))
+
+
+### Miscellaneous Chores
+
+* release 1.7.1 ([1e8b301](https://github.com/nolway/zod-paginate/commit/1e8b301910e4f6639f8806ca492b3424e4c5fb8a))
+
 ## [1.7.0](https://github.com/nolway/zod-paginate/compare/v1.6.1...v1.7.0) (2026-04-11)
 
 
