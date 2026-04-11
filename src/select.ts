@@ -761,10 +761,23 @@ export type TypedProjectedData<
 export interface SelectQueryPayload<
   TSchema extends DataSchema,
   TSelect extends AllowedPath<TSchema> = AllowedPath<TSchema>,
+  TResponseType extends SelectResponseType = SelectResponseType,
 > {
   fields: TSelect[];
-  responseType?: SelectResponseType;
+  responseType: TResponseType;
 }
+
+/** Shorthand for `SelectQueryPayload` with `responseType: 'one'`. */
+export type SelectOneQueryPayload<
+  TSchema extends DataSchema,
+  TSelect extends AllowedPath<TSchema> = AllowedPath<TSchema>,
+> = SelectQueryPayload<TSchema, TSelect, 'one'>;
+
+/** Shorthand for `SelectQueryPayload` with `responseType: 'many'`. */
+export type SelectManyQueryPayload<
+  TSchema extends DataSchema,
+  TSelect extends AllowedPath<TSchema> = AllowedPath<TSchema>,
+> = SelectQueryPayload<TSchema, TSelect, 'many'>;
 
 export interface SelectQueryParams<
   TSchema extends DataSchema,

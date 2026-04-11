@@ -476,7 +476,10 @@ describe('select with ZodDiscriminatedUnion', () => {
 
   it('validates response against discriminated union', () => {
     const { validatorSchema } = makeUnionSelect();
-    const schema = validatorSchema({ fields: ['id', 'name', 'type'] });
+    const schema = validatorSchema({
+      fields: ['id', 'name', 'type'],
+      responseType: 'one',
+    });
     const result = schema.safeParse({ data: [{ id: 1, name: 'test', type: 'video' }] });
     expect(result.success).toBe(true);
   });
@@ -512,7 +515,10 @@ describe('select with ZodDiscriminatedUnion', () => {
       defaultSelect: '*',
     });
 
-    const schema = s.validatorSchema({ fields: ['id', 'type', 'duration', 'bitrate'] });
+    const schema = s.validatorSchema({
+      fields: ['id', 'type', 'duration', 'bitrate'],
+      responseType: 'many',
+    });
 
     // Video item has duration but no bitrate → valid (matches Video option)
     expect(schema.safeParse({ data: [{ id: 1, type: 'video', duration: 120 }] }).success).toBe(
@@ -551,7 +557,10 @@ describe('select with ZodDiscriminatedUnion', () => {
       defaultSelect: '*',
     });
 
-    const schema = s.validatorSchema({ fields: ['id', 'type', 'duration', 'bitrate'] });
+    const schema = s.validatorSchema({
+      fields: ['id', 'type', 'duration', 'bitrate'],
+      responseType: 'many',
+    });
 
     // Object with wrong type value → rejected by both options
     expect(schema.safeParse({ data: [{ id: 1, type: 'unknown', duration: 10 }] }).success).toBe(
@@ -667,7 +676,7 @@ describe('select with responseType object', () => {
   it('validatorSchema: validates a single object', () => {
     const { validatorSchema } = makeObjectSelect();
 
-    const v = validatorSchema({ fields: ['id', 'status'] });
+    const v = validatorSchema({ fields: ['id', 'status'], responseType: 'one' });
 
     expect(() => v.parse({ data: { id: 1, status: 'active' } })).not.toThrow();
   });
@@ -675,7 +684,7 @@ describe('select with responseType object', () => {
   it('validatorSchema: rejects an array', () => {
     const { validatorSchema } = makeObjectSelect();
 
-    const v = validatorSchema({ fields: ['id', 'status'] });
+    const v = validatorSchema({ fields: ['id', 'status'], responseType: 'one' });
 
     expect(() => v.parse({ data: [{ id: 1, status: 'active' }] })).toThrow();
   });
@@ -735,7 +744,7 @@ describe('select with plain z.union()', () => {
       defaultSelect: '*',
     });
 
-    const schema = s.validatorSchema({ fields: ['id', 'name', 'title'] });
+    const schema = s.validatorSchema({ fields: ['id', 'name', 'title'], responseType: 'many' });
 
     // SchemaA match → valid
     expect(schema.safeParse({ data: [{ id: 1, name: 'test' }] }).success).toBe(true);

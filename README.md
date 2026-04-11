@@ -206,7 +206,7 @@ responseSchema.parse({
 });
 
 // Outgoing data validator projected to the actual requested select
-const contextSchema = validatorSchema(parsed2);
+const contextSchema = validatorSchema(parsed2.select);
 contextSchema.parse({
   data: [
     { id: 1, name: "Widget", details: { color: "red" } },
@@ -746,15 +746,24 @@ export function paginate<
 </details>
 
 <details>
-<summary><code>select()</code> signature</summary>
+<summary><code>select()</code> overloads</summary>
 
 ```ts
+// Overload 1 — responseType: 'one'
 export function select<
   TSchema extends DataSchema,
   const TSelectable extends readonly AllowedPath<TSchema>[],
 >(
-  config: SelectConfig<TSchema, TSelectable[number]>,
-): SelectResult<TSchema, TSelectable[number]>;
+  config: SelectConfig<TSchema, TSelectable[number], 'one'> & { responseType: 'one' },
+): SelectResult<TSchema, TSelectable[number], 'one'>;
+
+// Overload 2 — responseType: 'many' (default)
+export function select<
+  TSchema extends DataSchema,
+  const TSelectable extends readonly AllowedPath<TSchema>[],
+>(
+  config: SelectConfig<TSchema, TSelectable[number]> & { responseType?: 'many' },
+): SelectResult<TSchema, TSelectable[number], 'many'>;
 ```
 
 </details>
@@ -766,9 +775,14 @@ export function select<
 | `DataSchema` | `z.ZodObject \| z.ZodDiscriminatedUnion \| z.ZodUnion` |
 | `AllowedPath<TSchema>` | All valid dot-notation paths for a given schema |
 | `SelectConfig<TSchema, TSelectable>` | Configuration for `select()` |
-| `SelectResult<TSchema, TSelectable>` | Return type of `select()` |
+| `SelectResult<TSchema, TSelectable, TResponseType?>` | Return type of `select()`. `TResponseType` narrows `validatorSchema` return and `responseType` property. |
 | `SelectQueryParams<TSchema, TSelectable>` | Parsed output of `select()` — `{ select: SelectQueryPayload }` |
-| `SelectQueryPayload<TSchema, TSelectable>` | Inner select payload — `{ fields, responseType? }`. Passed to `validatorSchema()`. |
+| `SelectQueryPayload<TSchema, TSelectable, TResponseType?>` | Inner select payload — `{ fields, responseType }`. Passed to `validatorSchema()`. |
+| `SelectOneQueryPayload<TSchema, TSelectable?>` | Shorthand for `SelectQueryPayload<…, 'one'>` |
+| `SelectManyQueryPayload<TSchema, TSelectable?>` | Shorthand for `SelectQueryPayload<…, 'many'>` |
+| `SelectResponse<TSchema, TSelect, TResponseType?>` | Response type: `{ data: … }` — array when `'many'`, single object when `'one'` |
+| `SelectOneResponse<TSchema, TSelect?>` | Shorthand for `SelectResponse<…, 'one'>` |
+| `SelectManyResponse<TSchema, TSelect?>` | Shorthand for `SelectResponse<…, 'many'>` |
 | `TypedProjectedData<TSchema, TSelect>` | Projected data item with real value types (used in response types) |
 | `ProjectedData<TSchema, TSelect>` | Projected data item with `unknown` values (key autocompletion only) |
 | `PaginateResult<TSchema, TSelectable?, TType?>` | Return type of `paginate()` |
