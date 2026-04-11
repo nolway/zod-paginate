@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.7.0](https://github.com/nolway/zod-paginate/compare/v1.6.1...v1.7.0) (2026-04-11)
+
+
+### Features
+
+* add JS doc on config properties ([c26aaa5](https://github.com/nolway/zod-paginate/commit/c26aaa54a315ff7dee27466ed1a717944120da6f))
+* refine typing ([7b1581e](https://github.com/nolway/zod-paginate/commit/7b1581e66def4be38b6e1c242708fc7510d77e34))
+
+
+### Miscellaneous Chores
+
+* release 1.7.0 ([49d9c7d](https://github.com/nolway/zod-paginate/commit/49d9c7d42287b622b71fbc9b42513b0079444a4e))
+
 ## [1.6.1](https://github.com/nolway/zod-paginate/compare/v1.6.0...v1.6.1) (2026-04-10)
 
 
