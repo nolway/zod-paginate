@@ -360,26 +360,18 @@ describe('Integration: LIMIT_OFFSET full flow', () => {
     expect(leaves[0]?.op).toBe('$contains');
   });
 
-  it('handles sortBy with property not in sortable list (silently dropped)', () => {
+  it('rejects sortBy with property not in sortable list', () => {
     const { queryParamsSchema } = setup();
 
-    // email is not in sortable: only the valid sort item is kept
-    const parsed = queryParamsSchema().parse({
+    // email is not in sortable: should be rejected
+    const result = queryParamsSchema().safeParse({
       sortBy: ['createdAt:ASC', 'email:DESC'],
     });
 
-    if (parsed.pagination.type !== 'LIMIT_OFFSET') return;
-
-    expect(parsed.pagination.sortBy).toEqual([{ property: 'createdAt', direction: 'ASC' }]);
-
-    // If *all* sort items are unknown, sortBy resolves to undefined (no fallback to default)
-    const parsed2 = queryParamsSchema().parse({
-      sortBy: 'email:DESC',
-    });
-
-    if (parsed2.pagination.type !== 'LIMIT_OFFSET') return;
-
-    expect(parsed2.pagination.sortBy).toBeUndefined();
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues.some((i) => i.message.includes('"email"'))).toBe(true);
+    }
   });
 });
 
@@ -722,7 +714,7 @@ describe('Integration: select() full flow', () => {
     const { queryParamsSchema, validatorSchema } = setup();
 
     const parsed = queryParamsSchema().parse({});
-    expect(parsed.select).toEqual(['id', 'username', 'email']);
+    expect(parsed.select.fields).toEqual(['id', 'username', 'email']);
 
     const v = validatorSchema(parsed);
 
@@ -757,7 +749,7 @@ describe('Integration: select() full flow', () => {
     });
 
     const parsed = queryParamsSchema().parse({});
-    expect(parsed.select).toEqual([
+    expect(parsed.select.fields).toEqual([
       'id',
       'username',
       'email',
@@ -1148,10 +1140,11 @@ describe('OpenAPI compatibility: queryParamsSchema exposes named properties', ()
     expect(keys).not.toContain('page');
   });
 
-  it('schema without sortable/selectable omits sortBy/select', () => {
+  it('schema without sortable omits sortBy from shape', () => {
     const { queryParamsSchema } = paginate({
       paginationType: 'LIMIT_OFFSET',
       dataSchema: UserSchema,
+      selectable: ['id', 'username', 'email'],
       defaultLimit: 10,
       maxLimit: 50,
       defaultSelect: '*',
@@ -1164,7 +1157,6 @@ describe('OpenAPI compatibility: queryParamsSchema exposes named properties', ()
     expect(keys).toContain('limit');
     expect(keys).toContain('page');
     expect(keys).not.toContain('sortBy');
-    expect(keys).not.toContain('select');
   });
 
   it('select() standalone exposes select property', () => {

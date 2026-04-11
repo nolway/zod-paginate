@@ -1275,21 +1275,6 @@ describe('paginate with ZodDiscriminatedUnion', () => {
 /* ------------------------------------------- */
 
 describe('paginate edge cases', () => {
-  /* ---- select without selectable configured ---- */
-
-  it('rejects select param when no selectable is configured', () => {
-    const p = paginate({
-      paginationType: 'LIMIT_OFFSET',
-      dataSchema: ModelSchema,
-      defaultLimit: 10,
-      maxLimit: 50,
-      defaultSelect: '*',
-    });
-
-    const result = p.queryParamsSchema().safeParse({ select: 'id', limit: '10' });
-    expect(result.success).toBe(false);
-  });
-
   /* ---- sortBy without sortable configured ---- */
 
   it('rejects sortBy param when no sortable is configured', () => {

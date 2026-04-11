@@ -52,7 +52,7 @@ describe('select', () => {
 
     const parsed = queryParamsSchema().parse({ select: 'id,status' });
 
-    expect(parsed.select).toEqual(['id', 'status']);
+    expect(parsed.select.fields).toEqual(['id', 'status']);
   });
 
   it('trims whitespace and ignores empty segments', () => {
@@ -60,7 +60,7 @@ describe('select', () => {
 
     const parsed = queryParamsSchema().parse({ select: ' id , status , ' });
 
-    expect(parsed.select).toEqual(['id', 'status']);
+    expect(parsed.select.fields).toEqual(['id', 'status']);
   });
 
   it('supports nested paths (dot notation)', () => {
@@ -68,7 +68,7 @@ describe('select', () => {
 
     const parsed = queryParamsSchema().parse({ select: 'id,meta.score' });
 
-    expect(parsed.select).toEqual(['id', 'meta.score']);
+    expect(parsed.select.fields).toEqual(['id', 'meta.score']);
   });
 
   it('expands "*" to all selectable fields', () => {
@@ -76,7 +76,7 @@ describe('select', () => {
 
     const parsed = queryParamsSchema().parse({ select: '*' });
 
-    expect(parsed.select).toEqual(['id', 'status', 'meta.score']);
+    expect(parsed.select.fields).toEqual(['id', 'status', 'meta.score']);
   });
 
   it('falls back to defaultSelect when select is missing', () => {
@@ -85,7 +85,7 @@ describe('select', () => {
     const parsed = queryParamsSchema().parse({});
 
     // defaultSelect: ["*"] expands to full selectable
-    expect(parsed.select).toEqual(['id', 'status', 'meta.score']);
+    expect(parsed.select.fields).toEqual(['id', 'status', 'meta.score']);
   });
 
   it('falls back to partial defaultSelect when select is missing', () => {
@@ -93,7 +93,7 @@ describe('select', () => {
 
     const parsed = queryParamsSchema().parse({});
 
-    expect(parsed.select).toEqual(['id', 'status']);
+    expect(parsed.select.fields).toEqual(['id', 'status']);
   });
 
   /* ---------------------------------- */
@@ -387,7 +387,7 @@ describe('select', () => {
 
     const parsed = extended.parse({ select: 'id,status', search: 'alice', locale: 'fr' });
 
-    expect(parsed.select).toEqual(['id', 'status']);
+    expect(parsed.select.fields).toEqual(['id', 'status']);
     expect(parsed.search).toBe('alice');
     expect(parsed.locale).toBe('fr');
   });
@@ -402,7 +402,7 @@ describe('select', () => {
 
     const parsed = extended.parse({});
 
-    expect(parsed.select).toEqual(['id', 'status', 'meta.score']);
+    expect(parsed.select.fields).toEqual(['id', 'status', 'meta.score']);
     expect(parsed.search).toBeUndefined();
     expect(parsed.locale).toBe('en');
   });
@@ -434,7 +434,7 @@ describe('select', () => {
       search: 'test',
     });
 
-    expect(parsed.select).toEqual(['id', 'meta.score']);
+    expect(parsed.select.fields).toEqual(['id', 'meta.score']);
     expect(parsed.search).toBe('test');
   });
 });
@@ -471,12 +471,12 @@ describe('select with ZodDiscriminatedUnion', () => {
   it('parses select with a discriminated union dataSchema', () => {
     const { queryParamsSchema } = makeUnionSelect();
     const parsed = queryParamsSchema().parse({ select: 'id,name,type' });
-    expect(parsed.select).toEqual(['id', 'name', 'type']);
+    expect(parsed.select.fields).toEqual(['id', 'name', 'type']);
   });
 
   it('validates response against discriminated union', () => {
     const { validatorSchema } = makeUnionSelect();
-    const schema = validatorSchema({ select: ['id', 'name', 'type'] });
+    const schema = validatorSchema({ select: { fields: ['id', 'name', 'type'] } });
     const result = schema.safeParse({ data: [{ id: 1, name: 'test', type: 'video' }] });
     expect(result.success).toBe(true);
   });
@@ -490,7 +490,7 @@ describe('select with ZodDiscriminatedUnion', () => {
   it('defaults select with discriminated union', () => {
     const { queryParamsSchema } = makeUnionSelect();
     const parsed = queryParamsSchema().parse({});
-    expect(parsed.select).toEqual(['id', 'type']);
+    expect(parsed.select.fields).toEqual(['id', 'type']);
   });
 
   it('rejects select without discriminator field', () => {
@@ -502,7 +502,7 @@ describe('select with ZodDiscriminatedUnion', () => {
   it('allows select=* with discriminated union', () => {
     const { queryParamsSchema } = makeUnionSelect();
     const parsed = queryParamsSchema().parse({ select: '*' });
-    expect(parsed.select).toContain('type');
+    expect(parsed.select.fields).toContain('type');
   });
 
   it('validatorSchema preserves union structure (accepts option-specific data)', () => {
@@ -512,7 +512,7 @@ describe('select with ZodDiscriminatedUnion', () => {
       defaultSelect: '*',
     });
 
-    const schema = s.validatorSchema({ select: ['id', 'type', 'duration', 'bitrate'] });
+    const schema = s.validatorSchema({ select: { fields: ['id', 'type', 'duration', 'bitrate'] } });
 
     // Video item has duration but no bitrate → valid (matches Video option)
     expect(schema.safeParse({ data: [{ id: 1, type: 'video', duration: 120 }] }).success).toBe(
@@ -551,7 +551,7 @@ describe('select with ZodDiscriminatedUnion', () => {
       defaultSelect: '*',
     });
 
-    const schema = s.validatorSchema({ select: ['id', 'type', 'duration', 'bitrate'] });
+    const schema = s.validatorSchema({ select: { fields: ['id', 'type', 'duration', 'bitrate'] } });
 
     // Object with wrong type value → rejected by both options
     expect(schema.safeParse({ data: [{ id: 1, type: 'unknown', duration: 10 }] }).success).toBe(
@@ -605,8 +605,8 @@ describe('select with nested discriminated union', () => {
       defaultSelect: ['id', 'type'],
     });
     const parsed = s.queryParamsSchema().parse({ select: 'id,type,codec.id,codec.type' });
-    expect(parsed.select).toContain('codec.id');
-    expect(parsed.select).toContain('codec.type');
+    expect(parsed.select.fields).toContain('codec.id');
+    expect(parsed.select.fields).toContain('codec.type');
   });
 
   it('allows select without any codec fields (no nested check triggered)', () => {
@@ -616,7 +616,7 @@ describe('select with nested discriminated union', () => {
       defaultSelect: ['id', 'type'],
     });
     const parsed = s.queryParamsSchema().parse({ select: 'id,type,duration' });
-    expect(parsed.select).toEqual(['id', 'type', 'duration']);
+    expect(parsed.select.fields).toEqual(['id', 'type', 'duration']);
   });
 
   it('allows select=* with nested discriminated union', () => {
@@ -626,7 +626,7 @@ describe('select with nested discriminated union', () => {
       defaultSelect: ['id', 'type'],
     });
     const parsed = s.queryParamsSchema().parse({ select: '*' });
-    expect(parsed.select).toContain('codec.type');
+    expect(parsed.select.fields).toContain('codec.type');
   });
 });
 
@@ -667,7 +667,7 @@ describe('select with responseType object', () => {
   it('validatorSchema: validates a single object', () => {
     const { validatorSchema } = makeObjectSelect();
 
-    const v = validatorSchema({ select: ['id', 'status'] });
+    const v = validatorSchema({ select: { fields: ['id', 'status'] } });
 
     expect(() => v.parse({ data: { id: 1, status: 'active' } })).not.toThrow();
   });
@@ -675,7 +675,7 @@ describe('select with responseType object', () => {
   it('validatorSchema: rejects an array', () => {
     const { validatorSchema } = makeObjectSelect();
 
-    const v = validatorSchema({ select: ['id', 'status'] });
+    const v = validatorSchema({ select: { fields: ['id', 'status'] } });
 
     expect(() => v.parse({ data: [{ id: 1, status: 'active' }] })).toThrow();
   });
@@ -715,7 +715,7 @@ describe('select with plain z.union()', () => {
       defaultSelect: ['id'],
     });
     const parsed = s.queryParamsSchema().parse({ select: 'id,name' });
-    expect(parsed.select).toEqual(['id', 'name']);
+    expect(parsed.select.fields).toEqual(['id', 'name']);
   });
 
   it('does not require a discriminator (plain union has none)', () => {
@@ -725,7 +725,7 @@ describe('select with plain z.union()', () => {
       defaultSelect: ['id'],
     });
     const parsed = s.queryParamsSchema().parse({ select: 'id' });
-    expect(parsed.select).toEqual(['id']);
+    expect(parsed.select.fields).toEqual(['id']);
   });
 
   it('validatorSchema preserves union structure for plain union', () => {
@@ -735,7 +735,7 @@ describe('select with plain z.union()', () => {
       defaultSelect: '*',
     });
 
-    const schema = s.validatorSchema({ select: ['id', 'name', 'title'] });
+    const schema = s.validatorSchema({ select: { fields: ['id', 'name', 'title'] } });
 
     // SchemaA match → valid
     expect(schema.safeParse({ data: [{ id: 1, name: 'test' }] }).success).toBe(true);
@@ -1058,7 +1058,7 @@ describe('nested discriminated unions (union of unions)', () => {
       });
 
       const parsed = s.queryParamsSchema().parse({ select: 'status,materialType,uuid,videoId' });
-      expect(parsed.select).toEqual(['status', 'materialType', 'uuid', 'videoId']);
+      expect(parsed.select.fields).toEqual(['status', 'materialType', 'uuid', 'videoId']);
     });
 
     it('enforces both discriminator keys in select', () => {
@@ -1086,7 +1086,7 @@ describe('nested discriminated unions (union of unions)', () => {
       });
 
       const parsed = s.queryParamsSchema().parse({});
-      expect(parsed.select).toEqual(['status', 'materialType', 'uuid', 'videoId']);
+      expect(parsed.select.fields).toEqual(['status', 'materialType', 'uuid', 'videoId']);
     });
 
     it('validatorSchema validates against nested union structure', () => {
@@ -1264,7 +1264,7 @@ describe('array element path support', () => {
         defaultSelect: ['id', 'tags.name'],
       });
       const parsed = s.queryParamsSchema().parse({ select: 'id,tags.name,tags.color' });
-      expect(parsed.select).toEqual(['id', 'tags.name', 'tags.color']);
+      expect(parsed.select.fields).toEqual(['id', 'tags.name', 'tags.color']);
     });
 
     it('validatorSchema produces a schema that validates array element projections', () => {
@@ -1318,7 +1318,7 @@ describe('array element path support', () => {
         defaultSelect: ['type', 'items.name'],
       });
       const parsed = s.queryParamsSchema().parse({});
-      expect(parsed.select).toEqual(['type', 'items.name']);
+      expect(parsed.select.fields).toEqual(['type', 'items.name']);
 
       const schema = s.validatorSchema(parsed);
       expect(schema).toBeDefined();

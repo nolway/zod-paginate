@@ -16,9 +16,9 @@ import {
   type PathValue,
   pickFromAllowlist,
   projectDataSchemaPreservingUnion,
-  type ProjectedData,
   resolveToZodObject,
   SelectSchema,
+  type TypedProjectedData,
   type UntypedSelectableConfig,
   type ZodShape,
 } from './select';
@@ -649,7 +649,7 @@ export interface CommonQueryConfigFromSchema<
 > {
   dataSchema: TSchema;
 
-  selectable?: readonly TSelectable[];
+  selectable: readonly TSelectable[];
   sortable?: readonly AllowedPath<TSchema>[];
 
   filterable?: Partial<{
@@ -783,12 +783,15 @@ function computeSortBy<TSchema extends DataSchema>(
   if (sortByRaw) {
     const cleaned = sortByRaw.map((s) => s.trim()).filter(Boolean);
     if (cleaned.length > 0) {
+      const seen = new Set<string>();
       const out: SortItemTyped<TSchema>[] = [];
       for (const raw of cleaned) {
         const parsed = parseSortItem(raw);
 
         const picked = pickFromAllowlist(config.sortable, parsed.property);
         if (!picked) continue;
+        if (seen.has(picked)) continue;
+        seen.add(picked);
 
         out.push({ property: picked, direction: parsed.direction });
       }
@@ -872,7 +875,7 @@ export interface LimitOffsetPaginationResponse<
   TSchema extends DataSchema,
   TSelect extends AllowedPath<TSchema> = AllowedPath<TSchema>,
 > {
-  data: ProjectedData<TSchema, TSelect>[];
+  data: TypedProjectedData<TSchema, TSelect>[];
   pagination: LimitOffsetPaginationResponseMeta;
 }
 
@@ -880,7 +883,7 @@ export interface CursorPaginationResponse<
   TSchema extends DataSchema,
   TSelect extends AllowedPath<TSchema> = AllowedPath<TSchema>,
 > {
-  data: ProjectedData<TSchema, TSelect>[];
+  data: TypedProjectedData<TSchema, TSelect>[];
   pagination: CursorPaginationResponseMeta;
 }
 
@@ -1192,7 +1195,7 @@ export function paginate<
     'selectable' | 'defaultSelect' | 'sortable' | 'defaultSortBy' | 'filterable'
   > &
     LimitOffsetPaginationConfig & {
-      selectable?: EnsureDiscriminatorInSelectable<TSchema, TSelectable>;
+      selectable: EnsureDiscriminatorInSelectable<TSchema, TSelectable>;
       defaultSelect: readonly NoInfer<TSelectable[number]>[] | '*';
       sortable?: readonly NoInfer<TSelectable[number]>[];
       defaultSortBy?: readonly {
@@ -1216,7 +1219,7 @@ export function paginate<
     'selectable' | 'defaultSelect' | 'sortable' | 'defaultSortBy' | 'filterable'
   > &
     CursorPaginationConfig<InferData<TSchema>> & {
-      selectable?: EnsureDiscriminatorInSelectable<TSchema, TSelectable>;
+      selectable: EnsureDiscriminatorInSelectable<TSchema, TSelectable>;
       defaultSelect: readonly NoInfer<TSelectable[number]>[] | '*';
       sortable?: readonly NoInfer<TSelectable[number]>[];
       defaultSortBy?: readonly {
@@ -1239,7 +1242,7 @@ export function paginate<
     CommonQueryConfigFromSchema<TSchema, TSelectable[number]>,
     'selectable' | 'defaultSelect' | 'sortable' | 'defaultSortBy' | 'filterable'
   > & {
-    selectable?: EnsureDiscriminatorInSelectable<TSchema, TSelectable>;
+    selectable: EnsureDiscriminatorInSelectable<TSchema, TSelectable>;
     defaultSelect: readonly NoInfer<TSelectable[number]>[] | '*';
     sortable?: readonly NoInfer<TSelectable[number]>[];
     defaultSortBy?: readonly {
@@ -1262,7 +1265,7 @@ export function paginate<
     CommonQueryConfigFromSchema<TSchema, TSelectable[number]>,
     'selectable' | 'defaultSelect' | 'sortable' | 'defaultSortBy' | 'filterable'
   > & {
-    selectable?: EnsureDiscriminatorInSelectable<TSchema, TSelectable>;
+    selectable: EnsureDiscriminatorInSelectable<TSchema, TSelectable>;
     defaultSelect: readonly TSelectable[number][] | '*';
     sortable?: readonly TSelectable[number][];
     defaultSortBy?: readonly {
@@ -1279,7 +1282,7 @@ export function paginate<
   const discriminatorKey = getDiscriminatorKey(config.dataSchema);
   const nestedDiscriminators = findNestedDiscriminators(config.dataSchema);
 
-  const selectableStrings: string[] = [...(config.selectable ?? [])];
+  const selectableStrings: string[] = [...config.selectable];
 
   const effectiveConfig: UntypedSelectableConfig = {
     selectable: selectableStrings,
@@ -1361,7 +1364,7 @@ export function paginate<
       });
   }
 
-  if (config.selectable && config.selectable.length > 0) {
+  if (config.selectable.length > 0) {
     const defaultSelectDesc =
       config.defaultSelect === '*' ? '*' : [...config.defaultSelect].join(', ');
     rootShape.select = z
@@ -1447,15 +1450,6 @@ export function paginate<
             });
           }
 
-          // select forbidden if no selectable configured
-          if (val.select && (!config.selectable || config.selectable.length === 0)) {
-            ctx.addIssue({
-              code: 'custom',
-              path: ['select'],
-              message: `select is not allowed (no selectable fields configured)`,
-            });
-          }
-
           // select allowlist + "*" expandability
           const selectForValidation: readonly string[] =
             val.select ??
@@ -1530,7 +1524,6 @@ export function paginate<
           }
 
           // sort allowlist
-          const sortItems = computeSortBy(val.sortBy, config);
           if (val.sortBy) {
             if (!config.sortable || config.sortable.length === 0) {
               ctx.addIssue({
@@ -1538,14 +1531,16 @@ export function paginate<
                 path: ['sortBy'],
                 message: `sortBy is not allowed (no sortable fields configured)`,
               });
-            } else if (sortItems) {
+            } else {
+              const cleaned = val.sortBy.map((s) => s.trim()).filter(Boolean);
               let index = 0;
-              for (const item of sortItems) {
-                if (!allowedSortable.has(item.property)) {
+              for (const raw of cleaned) {
+                const parsed = parseSortItem(raw);
+                if (!allowedSortable.has(parsed.property)) {
                   ctx.addIssue({
                     code: 'custom',
                     path: ['sortBy', index],
-                    message: `sort property "${item.property}" is not allowed`,
+                    message: `sort property "${parsed.property}" is not allowed`,
                   });
                 }
                 index += 1;

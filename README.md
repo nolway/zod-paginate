@@ -52,7 +52,7 @@ const { queryParamsSchema, validatorSchema, responseSchema } = select({
 });
 
 const parsed = queryParamsSchema().parse({ select: "id,name,price" });
-// parsed.select → ["id", "name", "price"]
+// parsed.select.fields → ["id", "name", "price"]
 
 // Generic response schema — valid for all possible responses based on config
 responseSchema.parse({
@@ -194,11 +194,11 @@ const { queryParamsSchema, validatorSchema, responseSchema } = select({
 
 // select=* expands to all selectable fields
 const parsed = queryParamsSchema().parse({ select: "*" });
-// parsed.select → ["id", "name", "price", "details.weight", "details.color"]
+// parsed.select.fields → ["id", "name", "price", "details.weight", "details.color"]
 
 // Specific fields
 const parsed2 = queryParamsSchema().parse({ select: "id,name,details.color" });
-// parsed2.select → ["id", "name", "details.color"]
+// parsed2.select.fields → ["id", "name", "details.color"]
 
 // Generic response schema (based on defaultSelect)
 responseSchema.parse({
@@ -216,7 +216,7 @@ contextSchema.parse({
 
 // Missing select → uses defaultSelect
 const parsed3 = queryParamsSchema().parse({});
-// parsed3.select → ["id", "name", "price"]
+// parsed3.select.fields → ["id", "name", "price"]
 ```
 
 Use `SelectResult<TSchema, TSelectable>` instead of `ReturnType<typeof select>` for explicit return types:
@@ -270,7 +270,7 @@ Returns:
 |---|---:|---|
 | `paginationType` | `"LIMIT_OFFSET"` \| `"CURSOR"` | Pagination mode. |
 | `dataSchema` | `z.ZodObject` \| `z.ZodDiscriminatedUnion` \| `z.ZodUnion` | Zod schema for one data item (used for projection + cursor inference). |
-| `selectable?` | `string[]` (typed paths) | Allowlist of selectable fields (dot paths). Enables `select`. |
+| `selectable` | `string[]` (typed paths) | **Required.** Allowlist of selectable fields (dot paths). Enables `select`. |
 | `sortable?` | `string[]` (typed paths) | Allowlist of sortable fields. Enables `sortBy`. |
 | `filterable?` | object | Allowlist of filterable fields and allowed operators + field type. |
 | `defaultSortBy?` | `{ property, direction }[]` | Default sort if `sortBy` missing/empty. |
@@ -335,7 +335,7 @@ function createPaginatorUnion(): PaginateResult<typeof ModelSchema, "id" | "stat
 
 - **Input:** string or string[] — format: `field:ASC` or `field:DESC`
 - **Output:** `[{ property, direction }]`
-- Properties are matched against the `sortable` allowlist (unknown fields are dropped).
+- Properties are matched against the `sortable` allowlist (unknown fields are **rejected**).
 - Falls back to `defaultSortBy` when missing.
 
 ### `select`
@@ -371,7 +371,7 @@ responseSchema.parse({
 
 // Type-safe: z.infer narrows data keys to selectable paths
 type Response = z.infer<typeof responseSchema>;
-// Response["data"][0] → { id?: unknown; status?: unknown; createdAt?: unknown; meta?: unknown }
+// Response["data"][0] → { id?: number; status?: string; createdAt?: Date; meta?: { score: number } }
 // Response["pagination"].totalItems → number  ✓ (no manual narrowing)
 ```
 
@@ -648,7 +648,7 @@ const parsed = queryParamsSchema({ search: z.string().optional() }).parse({
   select: "id,name",
   search: "widget",
 });
-// parsed.select → ["id", "name"]
+// parsed.select.fields → ["id", "name"]
 // parsed.search → "widget"
 ```
 
@@ -716,7 +716,7 @@ responseSchema.parse({
 });
 
 type Response = z.infer<typeof responseSchema>;
-// Response["data"][0] → { id?: unknown; status?: unknown; createdAt?: unknown; meta?: unknown }
+// Response["data"][0] → { id?: number; status?: string; createdAt?: Date; meta?: { score: number } }
 // Response["pagination"].totalItems → number  ✓
 ```
 
@@ -767,6 +767,9 @@ export function select<
 | `AllowedPath<TSchema>` | All valid dot-notation paths for a given schema |
 | `SelectConfig<TSchema, TSelectable>` | Configuration for `select()` |
 | `SelectResult<TSchema, TSelectable>` | Return type of `select()` |
+| `SelectQueryPayload<TSchema, TSelectable>` | Parsed output of `select()` — `{ select: { fields, responseType? } }` |
+| `TypedProjectedData<TSchema, TSelect>` | Projected data item with real value types (used in response types) |
+| `ProjectedData<TSchema, TSelect>` | Projected data item with `unknown` values (key autocompletion only) |
 | `PaginateResult<TSchema, TSelectable?, TType?>` | Return type of `paginate()` |
 
 ## Adapters
