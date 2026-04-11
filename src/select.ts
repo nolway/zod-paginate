@@ -789,6 +789,18 @@ export interface SelectResponse<
   data: SelectResponseData<TSchema, TSelect, TResponseType>;
 }
 
+/** Shorthand for `SelectResponse` with `responseType: 'one'` (data is a single object). */
+export type SelectOneResponse<
+  TSchema extends DataSchema,
+  TSelect extends AllowedPath<TSchema> = AllowedPath<TSchema>,
+> = SelectResponse<TSchema, TSelect, 'one'>;
+
+/** Shorthand for `SelectResponse` with `responseType: 'many'` (data is an array). */
+export type SelectManyResponse<
+  TSchema extends DataSchema,
+  TSelect extends AllowedPath<TSchema> = AllowedPath<TSchema>,
+> = SelectResponse<TSchema, TSelect>;
+
 /**
  * Result type returned by `select()`. Use this instead of
  * `ReturnType<typeof select>` to preserve the generic `TSchema`.
@@ -801,6 +813,7 @@ export interface SelectResponse<
 export interface SelectResult<
   TSchema extends DataSchema,
   TSelectable extends AllowedPath<TSchema> = AllowedPath<TSchema>,
+  TResponseType extends SelectResponseType = SelectResponseType,
 > {
   queryParamsSchema: {
     (): z.ZodType<SelectQueryParams<TSchema, TSelectable>>;
@@ -810,9 +823,9 @@ export interface SelectResult<
   };
   validatorSchema: (
     parsed?: SelectQueryPayload<TSchema, TSelectable>,
-  ) => z.ZodType<SelectResponse<TSchema, TSelectable>>;
+  ) => z.ZodType<SelectResponse<TSchema, TSelectable, TResponseType>>;
   responseSchema: z.ZodObject<SelectResponseSchemaShape>;
-  responseType: SelectResponseType;
+  responseType: TResponseType;
 }
 
 /* ---------------------------------- */
@@ -830,10 +843,40 @@ export interface SelectResult<
 export function select<
   TSchema extends DataSchema,
   const TSelectable extends readonly AllowedPath<TSchema>[],
-  TResponseType extends SelectResponseType = 'many',
 >(
   config: Omit<
-    SelectConfig<TSchema, TSelectable[number], TResponseType>,
+    SelectConfig<TSchema, TSelectable[number], 'one'>,
+    'selectable' | 'defaultSelect'
+  > & {
+    /** Allowlist of selectable fields (dot-notation paths). Enables the `select` query parameter. */
+    selectable: EnsureDiscriminatorInSelectable<TSchema, TSelectable>;
+    /** Default fields returned when `select` is omitted. Use `"*"` to select all. */
+    defaultSelect: readonly NoInfer<TSelectable[number]>[] | '*';
+    /** Shape of `data` in the response: `"one"` returns a single object. */
+    responseType: 'one';
+  },
+): SelectResult<TSchema, TSelectable[number], 'one'>;
+
+export function select<
+  TSchema extends DataSchema,
+  const TSelectable extends readonly AllowedPath<TSchema>[],
+>(
+  config: Omit<SelectConfig<TSchema, TSelectable[number]>, 'selectable' | 'defaultSelect'> & {
+    /** Allowlist of selectable fields (dot-notation paths). Enables the `select` query parameter. */
+    selectable: EnsureDiscriminatorInSelectable<TSchema, TSelectable>;
+    /** Default fields returned when `select` is omitted. Use `"*"` to select all. */
+    defaultSelect: readonly NoInfer<TSelectable[number]>[] | '*';
+    /** Shape of `data` in the response: `"many"` returns an array (default). */
+    responseType?: 'many';
+  },
+): SelectResult<TSchema, TSelectable[number], 'many'>;
+
+export function select<
+  TSchema extends DataSchema,
+  const TSelectable extends readonly AllowedPath<TSchema>[],
+>(
+  config: Omit<
+    SelectConfig<TSchema, TSelectable[number], SelectResponseType>,
     'selectable' | 'defaultSelect'
   > & {
     /** Allowlist of selectable fields (dot-notation paths). Enables the `select` query parameter. */
@@ -970,7 +1013,7 @@ export function select<
 
   function validatorSchema(
     parsed?: SelectQueryPayload<TSchema, TSelectable[number]>,
-  ): z.ZodType<SelectResponse<TSchema, TSelectable[number]>>;
+  ): z.ZodType<SelectResponse<TSchema, TSelectable[number], SelectResponseType>>;
   function validatorSchema(parsed?: SelectQueryPayload<TSchema, TSelectable[number]>): z.ZodType {
     const effectiveSelect =
       parsed?.fields ?? computeSelect(undefined, effectiveConfig) ?? undefined;
