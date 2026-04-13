@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.9.3](https://github.com/nolway/zod-paginate/compare/v1.9.2...v1.9.3) (2026-04-13)
+
+
+### Bug Fixes
+
+* default select value generated without trailing space ([097c8c0](https://github.com/nolway/zod-paginate/commit/097c8c06f7d97e798f25be4fe91bd5808e20dd67))
+
+
+### Miscellaneous Chores
+
+* release 1.9.3 ([f32c718](https://github.com/nolway/zod-paginate/commit/f32c718364b7bb9a07fc13ebef6d46590d922ff3))
+
 ## [1.9.2](https://github.com/nolway/zod-paginate/compare/v1.9.1...v1.9.2) (2026-04-13)
 
 
