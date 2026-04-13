@@ -1707,7 +1707,7 @@ export function paginate<
     .number()
     .meta({ description: 'Total number of items matching the query' });
   const currentPageSchema = z.number().meta({ description: 'Current page number (1-based)' });
-  const totalPagesSchema = z.number().meta({ description: 'Total number of pages' });
+  const totalPagesSchema = z.number().min(1).meta({ description: 'Total number of pages' });
 
   const LIMIT_OFFSET_META_DESC = 'Pagination metadata for limit/offset mode';
   const CURSOR_META_DESC = 'Pagination metadata for cursor mode';
