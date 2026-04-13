@@ -920,7 +920,7 @@ export function select<
 
   const selectableList = selectableStrings.join(', ');
   const defaultSelectDesc =
-    config.defaultSelect === '*' ? '*' : [...config.defaultSelect].join(', ');
+    config.defaultSelect === '*' ? '*' : [...config.defaultSelect].join(',');
 
   const rootShape: Record<string, z.ZodType> = {
     select: z
