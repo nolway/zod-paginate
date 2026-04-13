@@ -1385,7 +1385,7 @@ export function paginate<
   if (config.sortable && config.sortable.length > 0) {
     const defaultSortDesc =
       config.defaultSortBy && config.defaultSortBy.length > 0
-        ? config.defaultSortBy.map((s) => `${s.property}:${s.direction}`).join(', ')
+        ? config.defaultSortBy.map((s) => `${s.property}:${s.direction}`).join(',')
         : 'none';
     rootShape.sortBy = z
       .union([z.string(), z.array(z.string())])
@@ -1398,7 +1398,7 @@ export function paginate<
 
   if (config.selectable.length > 0) {
     const defaultSelectDesc =
-      config.defaultSelect === '*' ? '*' : [...config.defaultSelect].join(', ');
+      config.defaultSelect === '*' ? '*' : [...config.defaultSelect].join(',');
     rootShape.select = z
       .string()
       .optional()
