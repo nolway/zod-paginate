@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.9.2](https://github.com/nolway/zod-paginate/compare/v1.9.1...v1.9.2) (2026-04-13)
+
+
+### Bug Fixes
+
+* add minimal value on totalPages schema ([8406fab](https://github.com/nolway/zod-paginate/commit/8406fab6b0f51569cfa38d44b86380fca3111f71))
+* default select and sortBy value generated without trailing space ([5a7eae4](https://github.com/nolway/zod-paginate/commit/5a7eae460ee2ea7c8fe48206dfb84c4727c15453))
+
+
+### Miscellaneous Chores
+
+* release 1.9.2 ([f217414](https://github.com/nolway/zod-paginate/commit/f2174142924e3d5ae26b4417793ee874dba7295f))
+
 ## [1.9.1](https://github.com/nolway/zod-paginate/compare/v1.9.0...v1.9.1) (2026-04-11)
 
 
