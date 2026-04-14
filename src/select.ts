@@ -928,7 +928,7 @@ export function select<
       .optional()
       .meta({
         description: `Comma-separated list of fields to include in the response. Allowed: ${selectableList}. Use "*" to select all. Default: ${defaultSelectDesc}`,
-        example: selectableList,
+        example: defaultSelectDesc,
       }),
   };
 

@@ -1392,7 +1392,7 @@ export function paginate<
       .optional()
       .meta({
         description: `Sort by field and direction. Format: "field:ASC" or "field:DESC". Allowed fields: ${config.sortable.join(', ')}. Default: ${defaultSortDesc}`,
-        example: `${String(config.sortable[0])}:ASC`,
+        example: config.sortable[0] ? `${config.sortable[0]}:ASC` : undefined,
       });
   }
 
@@ -1404,7 +1404,7 @@ export function paginate<
       .optional()
       .meta({
         description: `Comma-separated list of fields to return. Use "*" for all. Allowed fields: ${config.selectable.join(', ')}. Default: ${defaultSelectDesc}`,
-        example: config.selectable.join(','),
+        example: defaultSelectDesc,
       });
   }
 
