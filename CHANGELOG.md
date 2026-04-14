@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.9.4](https://github.com/nolway/zod-paginate/compare/v1.9.3...v1.9.4) (2026-04-14)
+
+
+### Bug Fixes
+
+* add default select on example ([fd988d9](https://github.com/nolway/zod-paginate/commit/fd988d9661dffba4affe70ba15f2694e7351e510))
+
+
+### Miscellaneous Chores
+
+* release 1.9.4 ([871413f](https://github.com/nolway/zod-paginate/commit/871413f296b06c3b912eb548490bd8d12ebe7aaf))
+
 ## [1.9.3](https://github.com/nolway/zod-paginate/compare/v1.9.2...v1.9.3) (2026-04-13)
 
 
