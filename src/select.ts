@@ -55,6 +55,29 @@ export type PathValue<T, P extends string> = P extends `${infer K}.${infer Rest}
     ? T[P]
     : never;
 
+/**
+ * Like `Path` but excludes intermediate object keys — only leaf paths are produced.
+ * For `{ a: { b: string }, c: number }`, generates `"a.b"` and `"c"` (not `"a"`).
+ * Object fields that contain only primitives at the leaf level are still represented via their dot-paths.
+ */
+export type LeafPath<T, D extends number = 5> = D extends 0
+  ? never
+  : T extends Primitive
+    ? never
+    : T extends readonly (infer E)[]
+      ? E extends Primitive
+        ? never
+        : LeafPath<E, Prev[D]>
+      : {
+          [K in Extract<keyof T, string>]: T[K] extends Primitive
+            ? K
+            : T[K] extends readonly (infer E)[]
+              ? E extends Primitive
+                ? K
+                : K | Join<K, LeafPath<E, Prev[D]>>
+              : Join<K, LeafPath<T[K], Prev[D]>>;
+        }[Extract<keyof T, string>];
+
 /* ---------------------------------- */
 /* Schema types */
 /* ---------------------------------- */
@@ -71,6 +94,7 @@ export type DataSchema =
     >;
 export type InferData<TSchema extends DataSchema> = z.infer<TSchema>;
 export type AllowedPath<TSchema extends DataSchema> = Path<InferData<TSchema>>;
+export type AllowedSelectablePath<TSchema extends DataSchema> = LeafPath<InferData<TSchema>>;
 
 /**
  * Extract the discriminator key as a string literal from a ZodDiscriminatedUnion.
@@ -140,7 +164,7 @@ export const SelectSchema = z
 /** Selectable fields configuration shared between `select()` and `paginate()` internals. */
 export interface SelectableConfig<
   TSchema extends DataSchema,
-  TSelect extends AllowedPath<TSchema> = AllowedPath<TSchema>,
+  TSelect extends AllowedSelectablePath<TSchema> = AllowedSelectablePath<TSchema>,
 > {
   /** Allowlist of selectable fields (dot-notation paths supported). */
   selectable?: readonly TSelect[];
@@ -176,7 +200,7 @@ export function pickFromAllowlist<T extends string>(
 /** Expand "*" to selectable; otherwise map through allowlist. */
 export function expandSelect<
   TSchema extends DataSchema,
-  TSelect extends AllowedPath<TSchema> = AllowedPath<TSchema>,
+  TSelect extends AllowedSelectablePath<TSchema> = AllowedSelectablePath<TSchema>,
 >(
   select: readonly string[] | undefined,
   config: SelectableConfig<TSchema, TSelect>,
@@ -208,7 +232,7 @@ export function expandSelect(
 
 export function computeSelect<
   TSchema extends DataSchema,
-  TSelect extends AllowedPath<TSchema> = AllowedPath<TSchema>,
+  TSelect extends AllowedSelectablePath<TSchema> = AllowedSelectablePath<TSchema>,
 >(select: string[] | undefined, config: SelectableConfig<TSchema, TSelect>): TSelect[] | undefined;
 export function computeSelect(
   select: string[] | undefined,
@@ -710,7 +734,7 @@ export function projectDataSchema(
 /** Configuration for the `select()` factory. */
 export interface SelectConfig<
   TSchema extends DataSchema,
-  TSelect extends AllowedPath<TSchema> = AllowedPath<TSchema>,
+  TSelect extends AllowedSelectablePath<TSchema> = AllowedSelectablePath<TSchema>,
   TResponseType extends SelectResponseType = 'many',
 > {
   /** Zod schema representing one data item (object, discriminated union, or union). */
@@ -740,7 +764,7 @@ export type TopLevelKey<P extends string> = P extends `${infer K}.${string}` ? K
  */
 export type ProjectedData<
   TSchema extends DataSchema,
-  TSelect extends AllowedPath<TSchema> = AllowedPath<TSchema>,
+  TSelect extends AllowedSelectablePath<TSchema> = AllowedSelectablePath<TSchema>,
 > = Partial<Record<TopLevelKey<TSelect> & keyof InferData<TSchema>, unknown>>;
 
 /**
@@ -753,14 +777,14 @@ export type ProjectedData<
  */
 export type TypedProjectedData<
   TSchema extends DataSchema,
-  TSelect extends AllowedPath<TSchema> = AllowedPath<TSchema>,
+  TSelect extends AllowedSelectablePath<TSchema> = AllowedSelectablePath<TSchema>,
 > = {
   [K in TopLevelKey<TSelect> & keyof InferData<TSchema>]?: InferData<TSchema>[K];
 };
 
 export interface SelectQueryPayload<
   TSchema extends DataSchema,
-  TSelect extends AllowedPath<TSchema> = AllowedPath<TSchema>,
+  TSelect extends AllowedSelectablePath<TSchema> = AllowedSelectablePath<TSchema>,
   TResponseType extends SelectResponseType = SelectResponseType,
 > {
   fields: TSelect[];
@@ -770,18 +794,18 @@ export interface SelectQueryPayload<
 /** Shorthand for `SelectQueryPayload` with `responseType: 'one'`. */
 export type SelectOneQueryPayload<
   TSchema extends DataSchema,
-  TSelect extends AllowedPath<TSchema> = AllowedPath<TSchema>,
+  TSelect extends AllowedSelectablePath<TSchema> = AllowedSelectablePath<TSchema>,
 > = SelectQueryPayload<TSchema, TSelect, 'one'>;
 
 /** Shorthand for `SelectQueryPayload` with `responseType: 'many'`. */
 export type SelectManyQueryPayload<
   TSchema extends DataSchema,
-  TSelect extends AllowedPath<TSchema> = AllowedPath<TSchema>,
+  TSelect extends AllowedSelectablePath<TSchema> = AllowedSelectablePath<TSchema>,
 > = SelectQueryPayload<TSchema, TSelect, 'many'>;
 
 export interface SelectQueryParams<
   TSchema extends DataSchema,
-  TSelect extends AllowedPath<TSchema> = AllowedPath<TSchema>,
+  TSelect extends AllowedSelectablePath<TSchema> = AllowedSelectablePath<TSchema>,
   TResponseType extends SelectResponseType = SelectResponseType,
 > {
   select: SelectQueryPayload<TSchema, TSelect, TResponseType>;
@@ -789,7 +813,7 @@ export interface SelectQueryParams<
 
 export type SelectResponseData<
   TSchema extends DataSchema,
-  TSelect extends AllowedPath<TSchema>,
+  TSelect extends AllowedSelectablePath<TSchema>,
   TResponseType extends SelectResponseType,
 > = TResponseType extends 'one'
   ? TypedProjectedData<TSchema, TSelect>
@@ -797,7 +821,7 @@ export type SelectResponseData<
 
 export interface SelectResponse<
   TSchema extends DataSchema,
-  TSelect extends AllowedPath<TSchema> = AllowedPath<TSchema>,
+  TSelect extends AllowedSelectablePath<TSchema> = AllowedSelectablePath<TSchema>,
   TResponseType extends SelectResponseType = 'many',
 > {
   data: SelectResponseData<TSchema, TSelect, TResponseType>;
@@ -806,13 +830,13 @@ export interface SelectResponse<
 /** Shorthand for `SelectResponse` with `responseType: 'one'` (data is a single object). */
 export type SelectOneResponse<
   TSchema extends DataSchema,
-  TSelect extends AllowedPath<TSchema> = AllowedPath<TSchema>,
+  TSelect extends AllowedSelectablePath<TSchema> = AllowedSelectablePath<TSchema>,
 > = SelectResponse<TSchema, TSelect, 'one'>;
 
 /** Shorthand for `SelectResponse` with `responseType: 'many'` (data is an array). */
 export type SelectManyResponse<
   TSchema extends DataSchema,
-  TSelect extends AllowedPath<TSchema> = AllowedPath<TSchema>,
+  TSelect extends AllowedSelectablePath<TSchema> = AllowedSelectablePath<TSchema>,
 > = SelectResponse<TSchema, TSelect>;
 
 /**
@@ -826,7 +850,7 @@ export type SelectManyResponse<
  */
 export interface SelectResult<
   TSchema extends DataSchema,
-  TSelectable extends AllowedPath<TSchema> = AllowedPath<TSchema>,
+  TSelectable extends AllowedSelectablePath<TSchema> = AllowedSelectablePath<TSchema>,
   TResponseType extends SelectResponseType = SelectResponseType,
 > {
   queryParamsSchema: {
@@ -858,7 +882,7 @@ export interface SelectResult<
  */
 export function select<
   TSchema extends DataSchema,
-  const TSelectable extends readonly AllowedPath<TSchema>[],
+  const TSelectable extends readonly AllowedSelectablePath<TSchema>[],
 >(
   config: Omit<
     SelectConfig<TSchema, TSelectable[number], 'one'>,
@@ -875,7 +899,7 @@ export function select<
 
 export function select<
   TSchema extends DataSchema,
-  const TSelectable extends readonly AllowedPath<TSchema>[],
+  const TSelectable extends readonly AllowedSelectablePath<TSchema>[],
 >(
   config: Omit<SelectConfig<TSchema, TSelectable[number]>, 'selectable' | 'defaultSelect'> & {
     /** Allowlist of selectable fields (dot-notation paths). Enables the `select` query parameter. */
@@ -889,7 +913,7 @@ export function select<
 
 export function select<
   TSchema extends DataSchema,
-  const TSelectable extends readonly AllowedPath<TSchema>[],
+  const TSelectable extends readonly AllowedSelectablePath<TSchema>[],
 >(
   config: Omit<
     SelectConfig<TSchema, TSelectable[number], SelectResponseType>,
