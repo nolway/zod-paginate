@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.9.5](https://github.com/nolway/zod-paginate/compare/v1.9.4...v1.9.5) (2026-04-14)
+
+
+### Bug Fixes
+
+* remove branch keys on selectable typing ([36807c8](https://github.com/nolway/zod-paginate/commit/36807c8727a63e8c07bb2fc8fed096367e03db3d))
+
+
+### Miscellaneous Chores
+
+* release 1.9.5 ([5f84516](https://github.com/nolway/zod-paginate/commit/5f84516229b198ed2aee2e8e8bc84f17d713f820))
+
 ## [1.9.4](https://github.com/nolway/zod-paginate/compare/v1.9.3...v1.9.4) (2026-04-14)
 
 
