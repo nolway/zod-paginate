@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.10.0](https://github.com/nolway/zod-paginate/compare/v1.9.5...v1.10.0) (2026-04-16)
+
+
+### Features
+
+* remove possible duplicate on config ([41f601b](https://github.com/nolway/zod-paginate/commit/41f601bcece9f3abd33b6782871634d38382de47))
+
+
+### Miscellaneous Chores
+
+* release 1.10.0 ([5e4f0c5](https://github.com/nolway/zod-paginate/commit/5e4f0c5c27771adb2a07c5a29a9d57e8fd2f3994))
+
 ## [1.9.5](https://github.com/nolway/zod-paginate/compare/v1.9.4...v1.9.5) (2026-04-14)
 
 
