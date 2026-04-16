@@ -13,6 +13,8 @@ import {
   type InferData,
   isPlainObject,
   isZodSchema,
+  type NoDuplicateProperties,
+  type NoDuplicates,
   type Path,
   type PathValue,
   pickFromAllowlist,
@@ -828,7 +830,7 @@ export interface LimitOffsetPaginationPayload<TSchema extends DataSchema> {
   limit: number;
   page?: number;
   sortBy?: SortItemTyped<TSchema>[];
-  select?: AllowedSelectablePath<TSchema>[];
+  select?: AllowedPath<TSchema>[];
   filters?: WhereNode;
 }
 
@@ -842,7 +844,7 @@ export interface CursorPaginationPayload<TSchema extends DataSchema> {
   cursor?: number | string;
   cursorProperty: AllowedPath<TSchema>;
   sortBy?: SortItemTyped<TSchema>[];
-  select?: AllowedSelectablePath<TSchema>[];
+  select?: AllowedPath<TSchema>[];
   filters?: WhereNode;
 }
 
@@ -886,7 +888,7 @@ export interface CursorPaginationResponseMeta {
 
 export interface LimitOffsetPaginationResponse<
   TSchema extends DataSchema,
-  TSelect extends AllowedSelectablePath<TSchema> = AllowedSelectablePath<TSchema>,
+  TSelect extends AllowedPath<TSchema> = AllowedPath<TSchema>,
 > {
   data: TypedProjectedData<TSchema, TSelect>[];
   pagination: LimitOffsetPaginationResponseMeta;
@@ -894,7 +896,7 @@ export interface LimitOffsetPaginationResponse<
 
 export interface CursorPaginationResponse<
   TSchema extends DataSchema,
-  TSelect extends AllowedSelectablePath<TSchema> = AllowedSelectablePath<TSchema>,
+  TSelect extends AllowedPath<TSchema> = AllowedPath<TSchema>,
 > {
   data: TypedProjectedData<TSchema, TSelect>[];
   pagination: CursorPaginationResponseMeta;
@@ -902,7 +904,7 @@ export interface CursorPaginationResponse<
 
 export type PaginationResponse<
   TSchema extends DataSchema,
-  TSelect extends AllowedSelectablePath<TSchema> = AllowedSelectablePath<TSchema>,
+  TSelect extends AllowedPath<TSchema> = AllowedPath<TSchema>,
   TType extends PaginationType = PaginationType,
 > = TType extends 'LIMIT_OFFSET'
   ? LimitOffsetPaginationResponse<TSchema, TSelect>
@@ -978,7 +980,7 @@ export interface PaginateResult<
   };
   validatorSchema: (
     parsed?: PaginationPayload<TSchema>,
-  ) => z.ZodType<PaginationResponse<TSchema, AllowedSelectablePath<TSchema>, TType>>;
+  ) => z.ZodType<PaginationResponse<TSchema, AllowedPath<TSchema>, TType>>;
   responseSchema: z.ZodObject<PaginationResponseSchemaShape<TType>>;
 }
 
@@ -1202,6 +1204,16 @@ function buildCursorResponseSchema(
 export function paginate<
   TSchema extends DataSchema,
   const TSelectable extends readonly AllowedSelectablePath<TSchema>[],
+  const TSortable extends readonly NoInfer<TSelectable[number]>[] = readonly NoInfer<
+    TSelectable[number]
+  >[],
+  const TDefaultSelect extends readonly NoInfer<TSelectable[number]>[] = readonly NoInfer<
+    TSelectable[number]
+  >[],
+  const TDefaultSortBy extends readonly {
+    property: NoInfer<TSelectable[number]>;
+    direction: SortDirection;
+  }[] = readonly { property: NoInfer<TSelectable[number]>; direction: SortDirection }[],
 >(
   config: Omit<
     CommonQueryConfigFromSchema<TSchema, TSelectable[number]>,
@@ -1209,16 +1221,13 @@ export function paginate<
   > &
     LimitOffsetPaginationConfig & {
       /** Allowlist of selectable fields (dot-notation paths). Enables the `select` query parameter. */
-      selectable: EnsureDiscriminatorInSelectable<TSchema, TSelectable>;
+      selectable: NoDuplicates<TSelectable> & EnsureDiscriminatorInSelectable<TSchema, TSelectable>;
       /** Default fields returned when `select` is omitted. Use `"*"` to select all. */
-      defaultSelect: readonly NoInfer<TSelectable[number]>[] | '*';
+      defaultSelect: NoDuplicates<TDefaultSelect> | '*';
       /** Allowlist of sortable fields. Enables the `sortBy` query parameter. Unknown sort fields are rejected. */
-      sortable?: readonly NoInfer<TSelectable[number]>[];
+      sortable?: NoDuplicates<TSortable>;
       /** Default sort order applied when `sortBy` is omitted from the query. */
-      defaultSortBy?: readonly {
-        property: NoInfer<TSelectable[number]>;
-        direction: SortDirection;
-      }[];
+      defaultSortBy?: NoDuplicateProperties<TDefaultSortBy>;
       /** Map of filterable fields to their allowed type and operators. Enables the `filter.*` query parameters. */
       filterable?: Partial<{
         [P in NoInfer<TSelectable[number]>]: FilterableFieldConfig<
@@ -1231,6 +1240,16 @@ export function paginate<
 export function paginate<
   TSchema extends DataSchema,
   const TSelectable extends readonly AllowedSelectablePath<TSchema>[],
+  const TSortable extends readonly NoInfer<TSelectable[number]>[] = readonly NoInfer<
+    TSelectable[number]
+  >[],
+  const TDefaultSelect extends readonly NoInfer<TSelectable[number]>[] = readonly NoInfer<
+    TSelectable[number]
+  >[],
+  const TDefaultSortBy extends readonly {
+    property: NoInfer<TSelectable[number]>;
+    direction: SortDirection;
+  }[] = readonly { property: NoInfer<TSelectable[number]>; direction: SortDirection }[],
 >(
   config: Omit<
     CommonQueryConfigFromSchema<TSchema, TSelectable[number]>,
@@ -1238,16 +1257,13 @@ export function paginate<
   > &
     CursorPaginationConfig<InferData<TSchema>> & {
       /** Allowlist of selectable fields (dot-notation paths). Enables the `select` query parameter. */
-      selectable: EnsureDiscriminatorInSelectable<TSchema, TSelectable>;
+      selectable: NoDuplicates<TSelectable> & EnsureDiscriminatorInSelectable<TSchema, TSelectable>;
       /** Default fields returned when `select` is omitted. Use `"*"` to select all. */
-      defaultSelect: readonly NoInfer<TSelectable[number]>[] | '*';
+      defaultSelect: NoDuplicates<TDefaultSelect> | '*';
       /** Allowlist of sortable fields. Enables the `sortBy` query parameter. Unknown sort fields are rejected. */
-      sortable?: readonly NoInfer<TSelectable[number]>[];
+      sortable?: NoDuplicates<TSortable>;
       /** Default sort order applied when `sortBy` is omitted from the query. */
-      defaultSortBy?: readonly {
-        property: NoInfer<TSelectable[number]>;
-        direction: SortDirection;
-      }[];
+      defaultSortBy?: NoDuplicateProperties<TDefaultSortBy>;
       /** Map of filterable fields to their allowed type and operators. Enables the `filter.*` query parameters. */
       filterable?: Partial<{
         [P in NoInfer<TSelectable[number]>]: FilterableFieldConfig<
@@ -1260,22 +1276,29 @@ export function paginate<
 export function paginate<
   TSchema extends DataSchema,
   const TSelectable extends readonly AllowedSelectablePath<TSchema>[],
+  const TSortable extends readonly NoInfer<TSelectable[number]>[] = readonly NoInfer<
+    TSelectable[number]
+  >[],
+  const TDefaultSelect extends readonly NoInfer<TSelectable[number]>[] = readonly NoInfer<
+    TSelectable[number]
+  >[],
+  const TDefaultSortBy extends readonly {
+    property: NoInfer<TSelectable[number]>;
+    direction: SortDirection;
+  }[] = readonly { property: NoInfer<TSelectable[number]>; direction: SortDirection }[],
 >(
   config: Omit<
     CommonQueryConfigFromSchema<TSchema, TSelectable[number]>,
     'selectable' | 'defaultSelect' | 'sortable' | 'defaultSortBy' | 'filterable'
   > & {
     /** Allowlist of selectable fields (dot-notation paths). Enables the `select` query parameter. */
-    selectable: EnsureDiscriminatorInSelectable<TSchema, TSelectable>;
+    selectable: NoDuplicates<TSelectable> & EnsureDiscriminatorInSelectable<TSchema, TSelectable>;
     /** Default fields returned when `select` is omitted. Use `"*"` to select all. */
-    defaultSelect: readonly NoInfer<TSelectable[number]>[] | '*';
+    defaultSelect: NoDuplicates<TDefaultSelect> | '*';
     /** Allowlist of sortable fields. Enables the `sortBy` query parameter. Unknown sort fields are rejected. */
-    sortable?: readonly NoInfer<TSelectable[number]>[];
+    sortable?: NoDuplicates<TSortable>;
     /** Default sort order applied when `sortBy` is omitted from the query. */
-    defaultSortBy?: readonly {
-      property: NoInfer<TSelectable[number]>;
-      direction: SortDirection;
-    }[];
+    defaultSortBy?: NoDuplicateProperties<TDefaultSortBy>;
     /** Map of filterable fields to their allowed type and operators. Enables the `filter.*` query parameters. */
     filterable?: Partial<{
       [P in NoInfer<TSelectable[number]>]: FilterableFieldConfig<
@@ -1288,22 +1311,29 @@ export function paginate<
 export function paginate<
   TSchema extends DataSchema,
   const TSelectable extends readonly AllowedSelectablePath<TSchema>[],
+  const TSortable extends readonly NoInfer<TSelectable[number]>[] = readonly NoInfer<
+    TSelectable[number]
+  >[],
+  const TDefaultSelect extends readonly NoInfer<TSelectable[number]>[] = readonly NoInfer<
+    TSelectable[number]
+  >[],
+  const TDefaultSortBy extends readonly {
+    property: NoInfer<TSelectable[number]>;
+    direction: SortDirection;
+  }[] = readonly { property: NoInfer<TSelectable[number]>; direction: SortDirection }[],
 >(
   config: Omit<
     CommonQueryConfigFromSchema<TSchema, TSelectable[number]>,
     'selectable' | 'defaultSelect' | 'sortable' | 'defaultSortBy' | 'filterable'
   > & {
     /** Allowlist of selectable fields (dot-notation paths). Enables the `select` query parameter. */
-    selectable: EnsureDiscriminatorInSelectable<TSchema, TSelectable>;
+    selectable: NoDuplicates<TSelectable> & EnsureDiscriminatorInSelectable<TSchema, TSelectable>;
     /** Default fields returned when `select` is omitted. Use `"*"` to select all. */
-    defaultSelect: readonly TSelectable[number][] | '*';
+    defaultSelect: NoDuplicates<TDefaultSelect> | '*';
     /** Allowlist of sortable fields. Enables the `sortBy` query parameter. Unknown sort fields are rejected. */
-    sortable?: readonly TSelectable[number][];
+    sortable?: NoDuplicates<TSortable>;
     /** Default sort order applied when `sortBy` is omitted from the query. */
-    defaultSortBy?: readonly {
-      property: TSelectable[number];
-      direction: SortDirection;
-    }[];
+    defaultSortBy?: NoDuplicateProperties<TDefaultSortBy>;
     /** Map of filterable fields to their allowed type and operators. Enables the `filter.*` query parameters. */
     filterable?: Partial<{
       [P in TSelectable[number]]: FilterableFieldConfig<
@@ -1647,7 +1677,7 @@ export function paginate<
           const sortBy = computeSortBy(val.sortBy, config);
           const rawSelect = computeSelect(val.select, effectiveConfig);
           const select = rawSelect?.filter(
-            (field): field is AllowedSelectablePath<TSchema> => typeof field === 'string',
+            (field): field is AllowedPath<TSchema> => typeof field === 'string',
           );
 
           const hasAnyFilter = Object.keys(val.rawFilters).length > 0;
@@ -1716,7 +1746,7 @@ export function paginate<
 
   function validatorSchema(
     parsed?: PaginationPayload<TSchema>,
-  ): z.ZodType<PaginationResponse<TSchema, AllowedSelectablePath<TSchema>>>;
+  ): z.ZodType<PaginationResponse<TSchema, AllowedPath<TSchema>>>;
   function validatorSchema(parsed?: PaginationPayload<TSchema>): z.ZodType {
     const effectiveSelect =
       parsed?.select ?? computeSelect(undefined, effectiveConfig) ?? undefined;

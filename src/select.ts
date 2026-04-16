@@ -109,6 +109,35 @@ export type ExtractDiscriminator<TSchema> =
     : never;
 
 /**
+ * Evaluates to `never` when the readonly tuple `T` contains duplicate elements;
+ * otherwise evaluates to `T` itself. Used to enforce unique items at the type level.
+ */
+type HasDuplicates<T extends readonly unknown[]> = T extends readonly [infer First, ...infer Rest]
+  ? First extends Rest[number]
+    ? true
+    : HasDuplicates<Rest>
+  : false;
+export type NoDuplicates<T extends readonly unknown[]> = HasDuplicates<T> extends true ? never : T;
+
+/**
+ * Extracts the `property` values from a readonly tuple of `{ property }` objects
+ * into a tuple of their property types, enabling duplicate detection on those values.
+ */
+type PropertyValues<T extends readonly { property: unknown }[]> = T extends readonly [
+  infer First extends { property: unknown },
+  ...infer Rest extends { property: unknown }[],
+]
+  ? [First['property'], ...PropertyValues<Rest>]
+  : [];
+
+/**
+ * Evaluates to `never` when the readonly tuple `T` contains two or more objects
+ * with the same `property` value; otherwise evaluates to `T` itself.
+ */
+export type NoDuplicateProperties<T extends readonly { property: string }[]> =
+  HasDuplicates<PropertyValues<T>> extends true ? never : T;
+
+/**
  * Enforces that `TSelectable` includes the discriminator key when `TSchema` is a `ZodDiscriminatedUnion`.
  * If the discriminator is missing, evaluates to `never`, causing a compile error.
  */
@@ -764,7 +793,7 @@ export type TopLevelKey<P extends string> = P extends `${infer K}.${string}` ? K
  */
 export type ProjectedData<
   TSchema extends DataSchema,
-  TSelect extends AllowedSelectablePath<TSchema> = AllowedSelectablePath<TSchema>,
+  TSelect extends AllowedPath<TSchema> = AllowedPath<TSchema>,
 > = Partial<Record<TopLevelKey<TSelect> & keyof InferData<TSchema>, unknown>>;
 
 /**
@@ -777,14 +806,14 @@ export type ProjectedData<
  */
 export type TypedProjectedData<
   TSchema extends DataSchema,
-  TSelect extends AllowedSelectablePath<TSchema> = AllowedSelectablePath<TSchema>,
+  TSelect extends AllowedPath<TSchema> = AllowedPath<TSchema>,
 > = {
   [K in TopLevelKey<TSelect> & keyof InferData<TSchema>]?: InferData<TSchema>[K];
 };
 
 export interface SelectQueryPayload<
   TSchema extends DataSchema,
-  TSelect extends AllowedSelectablePath<TSchema> = AllowedSelectablePath<TSchema>,
+  TSelect extends AllowedPath<TSchema> = AllowedPath<TSchema>,
   TResponseType extends SelectResponseType = SelectResponseType,
 > {
   fields: TSelect[];
@@ -794,18 +823,18 @@ export interface SelectQueryPayload<
 /** Shorthand for `SelectQueryPayload` with `responseType: 'one'`. */
 export type SelectOneQueryPayload<
   TSchema extends DataSchema,
-  TSelect extends AllowedSelectablePath<TSchema> = AllowedSelectablePath<TSchema>,
+  TSelect extends AllowedPath<TSchema> = AllowedPath<TSchema>,
 > = SelectQueryPayload<TSchema, TSelect, 'one'>;
 
 /** Shorthand for `SelectQueryPayload` with `responseType: 'many'`. */
 export type SelectManyQueryPayload<
   TSchema extends DataSchema,
-  TSelect extends AllowedSelectablePath<TSchema> = AllowedSelectablePath<TSchema>,
+  TSelect extends AllowedPath<TSchema> = AllowedPath<TSchema>,
 > = SelectQueryPayload<TSchema, TSelect, 'many'>;
 
 export interface SelectQueryParams<
   TSchema extends DataSchema,
-  TSelect extends AllowedSelectablePath<TSchema> = AllowedSelectablePath<TSchema>,
+  TSelect extends AllowedPath<TSchema> = AllowedPath<TSchema>,
   TResponseType extends SelectResponseType = SelectResponseType,
 > {
   select: SelectQueryPayload<TSchema, TSelect, TResponseType>;
@@ -813,7 +842,7 @@ export interface SelectQueryParams<
 
 export type SelectResponseData<
   TSchema extends DataSchema,
-  TSelect extends AllowedSelectablePath<TSchema>,
+  TSelect extends AllowedPath<TSchema>,
   TResponseType extends SelectResponseType,
 > = TResponseType extends 'one'
   ? TypedProjectedData<TSchema, TSelect>
@@ -821,7 +850,7 @@ export type SelectResponseData<
 
 export interface SelectResponse<
   TSchema extends DataSchema,
-  TSelect extends AllowedSelectablePath<TSchema> = AllowedSelectablePath<TSchema>,
+  TSelect extends AllowedPath<TSchema> = AllowedPath<TSchema>,
   TResponseType extends SelectResponseType = 'many',
 > {
   data: SelectResponseData<TSchema, TSelect, TResponseType>;
@@ -830,13 +859,13 @@ export interface SelectResponse<
 /** Shorthand for `SelectResponse` with `responseType: 'one'` (data is a single object). */
 export type SelectOneResponse<
   TSchema extends DataSchema,
-  TSelect extends AllowedSelectablePath<TSchema> = AllowedSelectablePath<TSchema>,
+  TSelect extends AllowedPath<TSchema> = AllowedPath<TSchema>,
 > = SelectResponse<TSchema, TSelect, 'one'>;
 
 /** Shorthand for `SelectResponse` with `responseType: 'many'` (data is an array). */
 export type SelectManyResponse<
   TSchema extends DataSchema,
-  TSelect extends AllowedSelectablePath<TSchema> = AllowedSelectablePath<TSchema>,
+  TSelect extends AllowedPath<TSchema> = AllowedPath<TSchema>,
 > = SelectResponse<TSchema, TSelect>;
 
 /**
@@ -883,15 +912,18 @@ export interface SelectResult<
 export function select<
   TSchema extends DataSchema,
   const TSelectable extends readonly AllowedSelectablePath<TSchema>[],
+  const TDefaultSelect extends readonly NoInfer<TSelectable[number]>[] = readonly NoInfer<
+    TSelectable[number]
+  >[],
 >(
   config: Omit<
     SelectConfig<TSchema, TSelectable[number], 'one'>,
     'selectable' | 'defaultSelect'
   > & {
     /** Allowlist of selectable fields (dot-notation paths). Enables the `select` query parameter. */
-    selectable: EnsureDiscriminatorInSelectable<TSchema, TSelectable>;
+    selectable: NoDuplicates<TSelectable> & EnsureDiscriminatorInSelectable<TSchema, TSelectable>;
     /** Default fields returned when `select` is omitted. Use `"*"` to select all. */
-    defaultSelect: readonly NoInfer<TSelectable[number]>[] | '*';
+    defaultSelect: NoDuplicates<TDefaultSelect> | '*';
     /** Shape of `data` in the response: `"one"` returns a single object. */
     responseType: 'one';
   },
@@ -900,12 +932,15 @@ export function select<
 export function select<
   TSchema extends DataSchema,
   const TSelectable extends readonly AllowedSelectablePath<TSchema>[],
+  const TDefaultSelect extends readonly NoInfer<TSelectable[number]>[] = readonly NoInfer<
+    TSelectable[number]
+  >[],
 >(
   config: Omit<SelectConfig<TSchema, TSelectable[number]>, 'selectable' | 'defaultSelect'> & {
     /** Allowlist of selectable fields (dot-notation paths). Enables the `select` query parameter. */
-    selectable: EnsureDiscriminatorInSelectable<TSchema, TSelectable>;
+    selectable: NoDuplicates<TSelectable> & EnsureDiscriminatorInSelectable<TSchema, TSelectable>;
     /** Default fields returned when `select` is omitted. Use `"*"` to select all. */
-    defaultSelect: readonly NoInfer<TSelectable[number]>[] | '*';
+    defaultSelect: NoDuplicates<TDefaultSelect> | '*';
     /** Shape of `data` in the response: `"many"` returns an array (default). */
     responseType?: 'many';
   },
@@ -914,15 +949,18 @@ export function select<
 export function select<
   TSchema extends DataSchema,
   const TSelectable extends readonly AllowedSelectablePath<TSchema>[],
+  const TDefaultSelect extends readonly NoInfer<TSelectable[number]>[] = readonly NoInfer<
+    TSelectable[number]
+  >[],
 >(
   config: Omit<
     SelectConfig<TSchema, TSelectable[number], SelectResponseType>,
     'selectable' | 'defaultSelect'
   > & {
     /** Allowlist of selectable fields (dot-notation paths). Enables the `select` query parameter. */
-    selectable: EnsureDiscriminatorInSelectable<TSchema, TSelectable>;
+    selectable: NoDuplicates<TSelectable> & EnsureDiscriminatorInSelectable<TSchema, TSelectable>;
     /** Default fields returned when `select` is omitted. Use `"*"` to select all. */
-    defaultSelect: readonly NoInfer<TSelectable[number]>[] | '*';
+    defaultSelect: NoDuplicates<TDefaultSelect> | '*';
   },
 ): SelectResult<TSchema, TSelectable[number]> {
   const responseType: SelectResponseType = config.responseType ?? 'many';
