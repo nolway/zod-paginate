@@ -6,6 +6,7 @@ on:
 permissions:
   contents: write
   id-token: write
+  issues: write
   pull-requests: write
 
 name: release-please
@@ -14,18 +15,16 @@ jobs:
   release-please:
     runs-on: ubuntu-latest
     steps:
-      - uses: google-github-actions/release-please-action@v3
+      - uses: googleapis/release-please-action@v4
         id: release
         with:
           release-type: node
-          package-name: "zod-paginate"
       # The logic below handles the npm publication:
-      - uses:
-          actions/checkout@v2
-          # these if statements ensure that a publication only occurs when
-          # a new release is created:
+      - uses: actions/checkout@v4
+        # these if statements ensure that a publication only occurs when
+        # a new release is created:
         if: ${{ steps.release.outputs.release_created }}
-      - uses: actions/setup-node@v1
+      - uses: actions/setup-node@v4
         with:
           node-version: 24
           registry-url: "https://registry.npmjs.org"
@@ -35,6 +34,4 @@ jobs:
       - run: npm run build
         if: ${{ steps.release.outputs.release_created }}
       - run: npm publish --access public
-        env:
-          NODE_AUTH_TOKEN: ""
         if: ${{ steps.release.outputs.release_created }}
