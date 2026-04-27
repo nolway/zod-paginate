@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.10.1](https://github.com/nolway/zod-paginate/compare/v1.10.0...v1.10.1) (2026-04-27)
+
+
+### Bug Fixes
+
+* handle discriminated union array ([f5e1733](https://github.com/nolway/zod-paginate/commit/f5e1733fd8af771a7eb56032fb4c114b83658720))
+* update release please to v4 ([e3f9acb](https://github.com/nolway/zod-paginate/commit/e3f9acb0c9f4143a4a552526ce957150d593962b))
+
+
+### Miscellaneous Chores
+
+* release 1.10.1 ([a84e6da](https://github.com/nolway/zod-paginate/commit/a84e6da9263dbd19c6b320033a125996e57f588c))
+
 ## [1.10.0](https://github.com/nolway/zod-paginate/compare/v1.9.5...v1.10.0) (2026-04-16)
 
 
