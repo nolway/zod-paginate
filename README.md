@@ -1,6 +1,6 @@
 # zod-paginate
 
-![Coverage](https://img.shields.io/badge/coverage-94.26%25-brightgreen)
+![Coverage](https://img.shields.io/badge/coverage-95.11%25-brightgreen)
 
 A small utility to **parse and validate pagination + select + sort + filters** from querystring-like objects using **Zod v4**, and to generate a **response validator** that automatically projects your `dataSchema` based on the requested `select`.
 

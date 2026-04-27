@@ -1339,4 +1339,83 @@ describe('array element path support', () => {
       expect(projected.safeParse({ type: 'A', items: [{ name: 'hello' }] }).success).toBe(true);
     });
   });
+
+  describe('discriminatedUnion inside array field', () => {
+    const BaseOutput = z.object({
+      quality: z.string(),
+      format: z.string(),
+    });
+
+    const ExtendedOutput = BaseOutput.extend({
+      bandwidth: z.number(),
+      outputPath: z.string(),
+    });
+
+    const ParentSchema = z.discriminatedUnion('materialType', [
+      z.object({
+        materialType: z.literal('VIDEO'),
+        outputVideos: z
+          .discriminatedUnion('status', [
+            BaseOutput.extend({
+              status: z.enum(['PREPARED', 'TRANSCODING']),
+            }),
+            ExtendedOutput.extend({
+              status: z.literal('TRANSCODED'),
+            }),
+          ])
+          .array(),
+      }),
+      z.object({
+        materialType: z.literal('AUDIO'),
+        outputAudios: z.object({ locale: z.string() }).array(),
+      }),
+    ]);
+
+    it('getZodAtPath resolves paths through discriminatedUnion.array()', () => {
+      const schema = getZodAtPath(ParentSchema, 'outputVideos.quality');
+      expect(schema).toBeDefined();
+    });
+
+    it('projectDataSchema projects paths through discriminatedUnion.array()', () => {
+      const projected = projectDataSchema(ParentSchema, [
+        'materialType',
+        'outputVideos.quality',
+        'outputVideos.format',
+      ]);
+      expect(projected).toBeDefined();
+      const result = projected.safeParse({
+        materialType: 'VIDEO',
+        outputVideos: [{ quality: 'HD', format: 'HLS' }],
+      });
+      expect(result.success).toBe(true);
+    });
+
+    it('select().validatorSchema returns schema for discriminatedUnion.array() fields', () => {
+      const s = select({
+        dataSchema: ParentSchema,
+        selectable: [
+          'materialType',
+          'outputVideos.quality',
+          'outputVideos.format',
+          'outputAudios.locale',
+        ] as const,
+        defaultSelect: '*',
+      });
+      const parsed = s
+        .queryParamsSchema()
+        .parse({ select: 'materialType,outputVideos.quality,outputVideos.format' });
+      const vSchema = s.validatorSchema(parsed.select);
+      expect(vSchema).toBeDefined();
+
+      const result = vSchema.safeParse({
+        data: [
+          {
+            materialType: 'VIDEO',
+            outputVideos: [{ quality: 'HD', format: 'HLS' }],
+          },
+        ],
+      });
+      expect(result.success).toBe(true);
+    });
+  });
 });

@@ -381,6 +381,24 @@ function resolveSchemaForTraversal(schema: unknown): {
 }
 
 /**
+ * Merge a union schema's leaf ZodObjects into a single ZodObject for path traversal
+ * (first-seen key wins). Returns undefined if the value is not a union schema.
+ */
+function mergeUnionForTraversal(v: unknown): z.ZodObject<z.ZodRawShape> | undefined {
+  if (!isZodUnionSchema(v)) return undefined;
+  const leaves = v.options.flatMap((option) => collectLeafObjects(option));
+  const mergedShape: Record<string, z.ZodType> = {};
+  for (const leaf of leaves) {
+    for (const [key, value] of Object.entries(leaf.shape)) {
+      if (!(key in mergedShape) && isZodSchema(value)) {
+        mergedShape[key] = value;
+      }
+    }
+  }
+  return z.object(mergedShape);
+}
+
+/**
  * Recursively collect all leaf ZodObject schemas from a DataSchema.
  * Traverses nested unions (ZodUnion / ZodDiscriminatedUnion) to reach the ZodObject leaves.
  */
@@ -545,8 +563,9 @@ function hasPathInObject(obj: z.ZodObject<z.ZodRawShape>, path: string): boolean
   for (const p of parts) {
     const { inner } = resolveSchemaForTraversal(current);
     current = inner;
-    if (!isZodObjectSchema(current)) return false;
-    const shape = getObjectShape(current);
+    const resolved = isZodObjectSchema(current) ? current : mergeUnionForTraversal(current);
+    if (!resolved) return false;
+    const shape = getObjectShape(resolved);
     const next = shape[p];
     if (!next || !isZodSchema(next)) return false;
     current = next;
@@ -637,11 +656,12 @@ export function getZodAtPath(obj: DataSchema, path: string): z.ZodType {
     const { inner } = resolveSchemaForTraversal(current);
     current = inner;
 
-    if (!isZodObjectSchema(current)) {
+    const resolved = isZodObjectSchema(current) ? current : mergeUnionForTraversal(current);
+    if (!resolved) {
       throw new Error(`dataSchema path "${path}" is invalid: "${p}" is not inside a ZodObject`);
     }
 
-    const shape = getObjectShape(current);
+    const shape = getObjectShape(resolved);
     const next = shape[p];
 
     if (!next) throw new Error(`dataSchema path "${path}" is invalid: missing key "${p}"`);
@@ -700,9 +720,13 @@ export function projectDataSchema(
 
       const isLeaf = i === parts.length - 1;
 
-      // Resolve schemaWalk to a traversable ZodObject
+      // Resolve schemaWalk to a traversable ZodObject (or merge union for traversal)
       const { inner } = resolveSchemaForTraversal(schemaWalk);
       schemaWalk = inner;
+      if (!isZodObjectSchema(schemaWalk)) {
+        const merged = mergeUnionForTraversal(schemaWalk);
+        if (merged) schemaWalk = merged;
+      }
 
       if (isZodObjectSchema(schemaWalk)) {
         const shape = getObjectShape(schemaWalk);
