@@ -940,14 +940,18 @@ interface CursorPaginationMetaSchemaShapeDef {
 }
 export type CursorPaginationMetaSchemaShape = ZodShape<CursorPaginationMetaSchemaShapeDef>;
 
+type PaginatedDataSchema =
+  | z.ZodArray<z.ZodObject<z.ZodRawShape>>
+  | z.ZodArray<z.ZodUnion<readonly [z.ZodObject<z.ZodRawShape>, ...z.ZodObject<z.ZodRawShape>[]]>>;
+
 interface LimitOffsetResponseSchemaShapeDef {
-  data: z.ZodArray<z.ZodType>;
+  data: PaginatedDataSchema;
   pagination: z.ZodObject<LimitOffsetPaginationMetaSchemaShape>;
 }
 export type LimitOffsetResponseSchemaShape = ZodShape<LimitOffsetResponseSchemaShapeDef>;
 
 interface CursorResponseSchemaShapeDef {
-  data: z.ZodArray<z.ZodType>;
+  data: PaginatedDataSchema;
   pagination: z.ZodObject<CursorPaginationMetaSchemaShape>;
 }
 export type CursorResponseSchemaShape = ZodShape<CursorResponseSchemaShapeDef>;
@@ -1147,7 +1151,11 @@ interface LimitOffsetResponseSchemaParts {
 function buildLimitOffsetResponseSchema(
   dataItemSchema: z.ZodType,
   parts: LimitOffsetResponseSchemaParts,
-): z.ZodObject<LimitOffsetResponseSchemaShape> {
+): z.ZodObject<LimitOffsetResponseSchemaShape>;
+function buildLimitOffsetResponseSchema(
+  dataItemSchema: z.ZodType,
+  parts: LimitOffsetResponseSchemaParts,
+): z.ZodType {
   return z.object({
     data: z.array(dataItemSchema),
     pagination: z
@@ -1175,7 +1183,11 @@ interface CursorResponseSchemaParts {
 function buildCursorResponseSchema(
   dataItemSchema: z.ZodType,
   parts: CursorResponseSchemaParts,
-): z.ZodObject<CursorResponseSchemaShape> {
+): z.ZodObject<CursorResponseSchemaShape>;
+function buildCursorResponseSchema(
+  dataItemSchema: z.ZodType,
+  parts: CursorResponseSchemaParts,
+): z.ZodType {
   return z.object({
     data: z.array(dataItemSchema),
     pagination: z

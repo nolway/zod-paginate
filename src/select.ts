@@ -163,12 +163,22 @@ export type ZodShape<T> = { [K in keyof T]: T[K] };
 interface SelectResponseSchemaShapeArrayDef {
   data: z.ZodArray<z.ZodObject<z.ZodRawShape>>;
 }
+interface SelectResponseSchemaShapeArrayUnionDef {
+  data: z.ZodArray<
+    z.ZodUnion<readonly [z.ZodObject<z.ZodRawShape>, ...z.ZodObject<z.ZodRawShape>[]]>
+  >;
+}
 interface SelectResponseSchemaShapeObjectDef {
   data: z.ZodObject<z.ZodRawShape>;
 }
+interface SelectResponseSchemaShapeObjectUnionDef {
+  data: z.ZodUnion<readonly [z.ZodObject<z.ZodRawShape>, ...z.ZodObject<z.ZodRawShape>[]]>;
+}
 export type SelectResponseSchemaShape =
   | ZodShape<SelectResponseSchemaShapeArrayDef>
-  | ZodShape<SelectResponseSchemaShapeObjectDef>;
+  | ZodShape<SelectResponseSchemaShapeArrayUnionDef>
+  | ZodShape<SelectResponseSchemaShapeObjectDef>
+  | ZodShape<SelectResponseSchemaShapeObjectUnionDef>;
 
 export type SelectResponseType = 'one' | 'many';
 
@@ -683,9 +693,12 @@ export function projectDataSchema(
   dataSchema: DataSchema,
   selectedPaths: string[],
 ): z.ZodObject<z.ZodRawShape> {
+  type UnionSchema = { options: (z.ZodObject<z.ZodRawShape> | z.ZodType)[] } & z.ZodType;
+
   const tree: Record<string, unknown> = {};
   const arrayPaths = new Set<string>();
   const optionalPaths = new Set<string>();
+  const unionAtPath = new Map<string, UnionSchema>();
 
   const ensureTreeNode = (node: Record<string, unknown>, key: string): Record<string, unknown> => {
     const existing = node[key];
@@ -738,6 +751,12 @@ export function projectDataSchema(
           if (wrapInfo.isArray) arrayPaths.add(partialPath);
           if (wrapInfo.isOptional) optionalPaths.add(partialPath);
 
+          // Track nested unions at intermediate paths so buildObjectFromTree
+          // can preserve the union structure instead of merging into a single object.
+          if (!isLeaf && isZodUnionSchema(wrapInfo.inner)) {
+            unionAtPath.set(partialPath, wrapInfo.inner);
+          }
+
           // Advance schema walk to the unwrapped inner for next iteration
           schemaWalk = isLeaf ? rawField : wrapInfo.inner;
         }
@@ -750,6 +769,20 @@ export function projectDataSchema(
       }
     }
   }
+
+  /** Collect leaf dot-paths from a projection tree node. */
+  const collectTreePaths = (node: Record<string, unknown>, prefix = ''): string[] => {
+    const paths: string[] = [];
+    for (const [key, value] of Object.entries(node)) {
+      const path = prefix ? `${prefix}.${key}` : key;
+      if (isZodSchema(value)) {
+        paths.push(path);
+      } else if (isPlainObject(value)) {
+        paths.push(...collectTreePaths(value, path));
+      }
+    }
+    return paths;
+  };
 
   const buildObjectFromTree = (
     node: Record<string, unknown>,
@@ -765,7 +798,15 @@ export function projectDataSchema(
         continue;
       }
       if (isPlainObject(v)) {
-        let built: z.ZodType = buildObjectFromTree(v, childPath);
+        const nestedUnion = unionAtPath.get(childPath);
+        let built: z.ZodType;
+        if (nestedUnion) {
+          // Preserve the nested union structure by projecting each option independently.
+          const subPaths = collectTreePaths(v);
+          built = projectNestedUnion(nestedUnion, subPaths);
+        } else {
+          built = buildObjectFromTree(v, childPath);
+        }
         if (arrayPaths.has(childPath)) built = z.array(built);
         if (optionalPaths.has(childPath)) built = built.optional();
         shape[k] = built;

@@ -14,6 +14,18 @@ import {
   computeSelect,
 } from './select';
 
+function isObj(v: unknown): v is Record<string, unknown> {
+  return typeof v === 'object' && v !== null && !Array.isArray(v);
+}
+function expectObj(v: unknown): asserts v is Record<string, unknown> {
+  expect(v).toBeDefined();
+  expect(typeof v).toBe('object');
+  expect(v).not.toBeNull();
+}
+function expectArray(v: unknown): asserts v is unknown[] {
+  expect(Array.isArray(v)).toBe(true);
+}
+
 const ModelSchema = z.object({
   id: z.number(),
   status: z.string(),
@@ -1416,6 +1428,461 @@ describe('array element path support', () => {
         ],
       });
       expect(result.success).toBe(true);
+    });
+  });
+
+  /* ------------------------------------------------------------------ */
+  /* Nested union/discriminatedUnion inside array: variant preservation  */
+  /* ------------------------------------------------------------------ */
+
+  describe('nested union inside array preserves variants', () => {
+    const OutputBase = z.object({ quality: z.string(), format: z.string() });
+    const OutputExtended = OutputBase.extend({ bandwidth: z.number(), outputPath: z.string() });
+
+    /* --- z.union --- */
+    const UnionInArraySchema = z.object({
+      name: z.string(),
+      outputs: z
+        .union([
+          OutputBase.extend({ status: z.literal('prepared') }),
+          OutputExtended.extend({ status: z.literal('transcoded') }),
+        ])
+        .array(),
+    });
+
+    /* --- z.discriminatedUnion --- */
+    const DiscUnionInArraySchema = z.object({
+      name: z.string(),
+      outputs: z
+        .discriminatedUnion('status', [
+          OutputBase.extend({ status: z.literal('prepared') }),
+          OutputExtended.extend({ status: z.literal('transcoded') }),
+        ])
+        .array(),
+    });
+
+    /* --- top-level union with nested union arrays --- */
+    const TopLevelUnionSchema = z.discriminatedUnion('kind', [
+      z.object({
+        kind: z.literal('video'),
+        outputs: z
+          .union([
+            OutputBase.extend({ status: z.literal('prepared') }),
+            OutputExtended.extend({ status: z.literal('transcoded') }),
+          ])
+          .array(),
+      }),
+      z.object({
+        kind: z.literal('audio'),
+        tracks: z.object({ locale: z.string() }).array(),
+      }),
+    ]);
+
+    describe('projectDataSchema with z.union inside array', () => {
+      it('preserves union variants when projecting sub-fields', () => {
+        const projected = projectDataSchema(UnionInArraySchema, [
+          'name',
+          'outputs.status',
+          'outputs.quality',
+          'outputs.format',
+        ]);
+
+        // The "prepared" variant has only quality + format + status
+        expect(
+          projected.safeParse({
+            name: 'test',
+            outputs: [{ status: 'prepared', quality: 'HD', format: 'HLS' }],
+          }).success,
+        ).toBe(true);
+
+        // The "transcoded" variant has extra bandwidth + outputPath
+        expect(
+          projected.safeParse({
+            name: 'test',
+            outputs: [{ status: 'transcoded', quality: 'HD', format: 'HLS' }],
+          }).success,
+        ).toBe(true);
+      });
+    });
+
+    describe('projectDataSchema with z.discriminatedUnion inside array', () => {
+      it('preserves discriminated union variants when projecting sub-fields', () => {
+        const projected = projectDataSchema(DiscUnionInArraySchema, [
+          'name',
+          'outputs.status',
+          'outputs.quality',
+          'outputs.format',
+        ]);
+
+        expect(
+          projected.safeParse({
+            name: 'test',
+            outputs: [{ status: 'prepared', quality: 'HD', format: 'HLS' }],
+          }).success,
+        ).toBe(true);
+
+        expect(
+          projected.safeParse({
+            name: 'test',
+            outputs: [{ status: 'transcoded', quality: 'HD', format: 'HLS' }],
+          }).success,
+        ).toBe(true);
+      });
+    });
+
+    describe('select() preserves nested union variants in validatorSchema', () => {
+      it('z.union inside array', () => {
+        const s = select({
+          dataSchema: UnionInArraySchema,
+          selectable: ['name', 'outputs.status', 'outputs.quality', 'outputs.format'] as const,
+          defaultSelect: '*',
+        });
+        const parsed = s.queryParamsSchema().parse({});
+        const vSchema = s.validatorSchema(parsed.select);
+
+        expect(
+          vSchema.safeParse({
+            data: [{ name: 'a', outputs: [{ status: 'prepared', quality: 'HD', format: 'HLS' }] }],
+          }).success,
+        ).toBe(true);
+
+        expect(
+          vSchema.safeParse({
+            data: [
+              { name: 'a', outputs: [{ status: 'transcoded', quality: 'HD', format: 'HLS' }] },
+            ],
+          }).success,
+        ).toBe(true);
+      });
+
+      it('z.discriminatedUnion inside array', () => {
+        const s = select({
+          dataSchema: DiscUnionInArraySchema,
+          selectable: ['name', 'outputs.status', 'outputs.quality', 'outputs.format'] as const,
+          defaultSelect: '*',
+        });
+        const parsed = s.queryParamsSchema().parse({});
+        const vSchema = s.validatorSchema(parsed.select);
+
+        expect(
+          vSchema.safeParse({
+            data: [{ name: 'a', outputs: [{ status: 'prepared', quality: 'HD', format: 'HLS' }] }],
+          }).success,
+        ).toBe(true);
+
+        expect(
+          vSchema.safeParse({
+            data: [
+              { name: 'a', outputs: [{ status: 'transcoded', quality: 'HD', format: 'HLS' }] },
+            ],
+          }).success,
+        ).toBe(true);
+      });
+    });
+
+    describe('select() with top-level union + nested union array', () => {
+      it('preserves nested union variants inside each top-level variant', () => {
+        const s = select({
+          dataSchema: TopLevelUnionSchema,
+          selectable: [
+            'kind',
+            'outputs.status',
+            'outputs.quality',
+            'outputs.format',
+            'tracks.locale',
+          ] as const,
+          defaultSelect: '*',
+        });
+        const parsed = s.queryParamsSchema().parse({});
+        const vSchema = s.validatorSchema(parsed.select);
+
+        // Video variant with mixed output statuses
+        expect(
+          vSchema.safeParse({
+            data: [
+              {
+                kind: 'video',
+                outputs: [
+                  { status: 'prepared', quality: 'HD', format: 'HLS' },
+                  { status: 'transcoded', quality: 'SD', format: 'DASH' },
+                ],
+              },
+            ],
+          }).success,
+        ).toBe(true);
+
+        // Audio variant
+        expect(
+          vSchema.safeParse({
+            data: [{ kind: 'audio', tracks: [{ locale: 'en' }] }],
+          }).success,
+        ).toBe(true);
+      });
+    });
+
+    describe('paginate() preserves nested union variants', () => {
+      it('z.union inside array with LIMIT_OFFSET', () => {
+        const p = paginate({
+          paginationType: 'LIMIT_OFFSET',
+          dataSchema: UnionInArraySchema,
+          selectable: ['name', 'outputs.status', 'outputs.quality', 'outputs.format'] as const,
+          defaultSelect: '*',
+          defaultLimit: 20,
+          maxLimit: 100,
+        });
+        const parsed = p.queryParamsSchema().parse({});
+        const vSchema = p.validatorSchema(parsed.pagination);
+
+        expect(
+          vSchema.safeParse({
+            data: [{ name: 'a', outputs: [{ status: 'prepared', quality: 'HD', format: 'HLS' }] }],
+            pagination: { itemsPerPage: 20, totalItems: 1, currentPage: 1, totalPages: 1 },
+          }).success,
+        ).toBe(true);
+
+        expect(
+          vSchema.safeParse({
+            data: [
+              { name: 'a', outputs: [{ status: 'transcoded', quality: 'HD', format: 'HLS' }] },
+            ],
+            pagination: { itemsPerPage: 20, totalItems: 1, currentPage: 1, totalPages: 1 },
+          }).success,
+        ).toBe(true);
+      });
+
+      it('z.discriminatedUnion inside array with CURSOR', () => {
+        const p = paginate({
+          paginationType: 'CURSOR',
+          dataSchema: DiscUnionInArraySchema,
+          cursorProperty: 'name',
+          selectable: ['name', 'outputs.status', 'outputs.quality', 'outputs.format'] as const,
+          defaultSelect: '*',
+          defaultLimit: 10,
+          maxLimit: 50,
+        });
+        const parsed = p.queryParamsSchema().parse({});
+        const vSchema = p.validatorSchema(parsed.pagination);
+
+        expect(
+          vSchema.safeParse({
+            data: [{ name: 'a', outputs: [{ status: 'prepared', quality: 'HD', format: 'HLS' }] }],
+            pagination: { itemsPerPage: 10, cursor: 'a' },
+          }).success,
+        ).toBe(true);
+
+        expect(
+          vSchema.safeParse({
+            data: [
+              { name: 'a', outputs: [{ status: 'transcoded', quality: 'HD', format: 'HLS' }] },
+            ],
+            pagination: { itemsPerPage: 10, cursor: 'a' },
+          }).success,
+        ).toBe(true);
+      });
+
+      it('top-level union + nested union array with LIMIT_OFFSET', () => {
+        const p = paginate({
+          paginationType: 'LIMIT_OFFSET',
+          dataSchema: TopLevelUnionSchema,
+          selectable: [
+            'kind',
+            'outputs.status',
+            'outputs.quality',
+            'outputs.format',
+            'tracks.locale',
+          ] as const,
+          defaultSelect: '*',
+          defaultLimit: 20,
+          maxLimit: 100,
+        });
+        const parsed = p.queryParamsSchema().parse({});
+        const vSchema = p.validatorSchema(parsed.pagination);
+
+        expect(
+          vSchema.safeParse({
+            data: [
+              {
+                kind: 'video',
+                outputs: [
+                  { status: 'prepared', quality: 'HD', format: 'HLS' },
+                  { status: 'transcoded', quality: 'SD', format: 'DASH' },
+                ],
+              },
+            ],
+            pagination: { itemsPerPage: 20, totalItems: 1, currentPage: 1, totalPages: 1 },
+          }).success,
+        ).toBe(true);
+      });
+    });
+
+    describe('responseSchema preserves nested union variants', () => {
+      it('z.union inside array — responseSchema validates both variants', () => {
+        const s = select({
+          dataSchema: UnionInArraySchema,
+          selectable: ['name', 'outputs.status', 'outputs.quality', 'outputs.format'] as const,
+          defaultSelect: '*',
+        });
+
+        // "prepared" variant
+        expect(
+          s.responseSchema.safeParse({
+            data: [{ name: 'a', outputs: [{ status: 'prepared', quality: 'HD', format: 'HLS' }] }],
+          }).success,
+        ).toBe(true);
+
+        // "transcoded" variant
+        expect(
+          s.responseSchema.safeParse({
+            data: [
+              { name: 'a', outputs: [{ status: 'transcoded', quality: 'HD', format: 'HLS' }] },
+            ],
+          }).success,
+        ).toBe(true);
+
+        // mixed variants in one array
+        expect(
+          s.responseSchema.safeParse({
+            data: [
+              {
+                name: 'a',
+                outputs: [
+                  { status: 'prepared', quality: 'HD', format: 'HLS' },
+                  { status: 'transcoded', quality: 'SD', format: 'DASH' },
+                ],
+              },
+            ],
+          }).success,
+        ).toBe(true);
+      });
+
+      it('z.discriminatedUnion inside array — responseSchema validates both variants', () => {
+        const s = select({
+          dataSchema: DiscUnionInArraySchema,
+          selectable: ['name', 'outputs.status', 'outputs.quality', 'outputs.format'] as const,
+          defaultSelect: '*',
+        });
+
+        expect(
+          s.responseSchema.safeParse({
+            data: [{ name: 'a', outputs: [{ status: 'prepared', quality: 'HD', format: 'HLS' }] }],
+          }).success,
+        ).toBe(true);
+
+        expect(
+          s.responseSchema.safeParse({
+            data: [
+              { name: 'a', outputs: [{ status: 'transcoded', quality: 'HD', format: 'HLS' }] },
+            ],
+          }).success,
+        ).toBe(true);
+      });
+
+      it('top-level union + nested union array — responseSchema validates all variants', () => {
+        const s = select({
+          dataSchema: TopLevelUnionSchema,
+          selectable: [
+            'kind',
+            'outputs.status',
+            'outputs.quality',
+            'outputs.format',
+            'tracks.locale',
+          ] as const,
+          defaultSelect: '*',
+        });
+
+        // Video variant with mixed output statuses
+        expect(
+          s.responseSchema.safeParse({
+            data: [
+              {
+                kind: 'video',
+                outputs: [
+                  { status: 'prepared', quality: 'HD', format: 'HLS' },
+                  { status: 'transcoded', quality: 'SD', format: 'DASH' },
+                ],
+              },
+            ],
+          }).success,
+        ).toBe(true);
+
+        // Audio variant
+        expect(
+          s.responseSchema.safeParse({
+            data: [{ kind: 'audio', tracks: [{ locale: 'en' }] }],
+          }).success,
+        ).toBe(true);
+      });
+
+      it('responseSchema internal structure has union inside array, not a flat merge', () => {
+        const s = select({
+          dataSchema: UnionInArraySchema,
+          selectable: ['name', 'outputs.status', 'outputs.quality', 'outputs.format'] as const,
+          defaultSelect: '*',
+        });
+
+        // Verify via JSON Schema that outputs array items use anyOf (union), not a flat object merge
+        const jsonSchema = z.toJSONSchema(s.responseSchema);
+        expectObj(jsonSchema.properties);
+        const properties = jsonSchema.properties;
+        expectObj(properties.data);
+        const data = properties.data;
+        expectObj(data.items);
+        const items = data.items;
+        expectObj(items.properties);
+        const itemProps = items.properties;
+        expectObj(itemProps.outputs);
+        const outputs = itemProps.outputs;
+        expectObj(outputs.items);
+        const outputItems = outputs.items;
+
+        // The array element must be an anyOf with 2 options, NOT a flat object
+        expectArray(outputItems.anyOf);
+        expect(outputItems.anyOf.length).toBe(2);
+      });
+
+      it('top-level union — responseSchema has union inside outputs array for each variant', () => {
+        const s = select({
+          dataSchema: TopLevelUnionSchema,
+          selectable: [
+            'kind',
+            'outputs.status',
+            'outputs.quality',
+            'outputs.format',
+            'tracks.locale',
+          ] as const,
+          defaultSelect: '*',
+        });
+
+        // Verify via JSON Schema
+        const jsonSchema = z.toJSONSchema(s.responseSchema);
+        expectObj(jsonSchema.properties);
+        const properties = jsonSchema.properties;
+        expectObj(properties.data);
+        const data = properties.data;
+        expectObj(data.items);
+        const items = data.items;
+
+        // Top-level: data items should be anyOf with 2 variants
+        expectArray(items.anyOf);
+        const topLevelAnyOf = items.anyOf;
+        expect(topLevelAnyOf.length).toBe(2);
+
+        // Find the "video" variant (has "outputs" property)
+        const videoVariant = topLevelAnyOf.find(
+          (opt: unknown) => isObj(opt) && isObj(opt.properties) && 'outputs' in opt.properties,
+        );
+        expectObj(videoVariant);
+        expectObj(videoVariant.properties);
+        const videoProps = videoVariant.properties;
+        expectObj(videoProps.outputs);
+        const outputs = videoProps.outputs;
+        expectObj(outputs.items);
+        const outputItems = outputs.items;
+
+        // The nested array element must be an anyOf with 2 options
+        expectArray(outputItems.anyOf);
+        expect(outputItems.anyOf.length).toBe(2);
+      });
     });
   });
 });
