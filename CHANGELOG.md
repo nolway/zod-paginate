@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.10.2](https://github.com/nolway/zod-paginate/compare/v1.10.1...v1.10.2) (2026-04-29)
+
+
+### Bug Fixes
+
+* use union on validator tree ([ba0598b](https://github.com/nolway/zod-paginate/commit/ba0598bf27b14fda7511e2de2bcd0ba4a3aef07b))
+
+
+### Miscellaneous Chores
+
+* release 1.10.2 ([58229da](https://github.com/nolway/zod-paginate/commit/58229dac37d7d46d670d1eef4d134e9c5bf128c5))
+
 ## [1.10.1](https://github.com/nolway/zod-paginate/compare/v1.10.0...v1.10.1) (2026-04-27)
 
 
