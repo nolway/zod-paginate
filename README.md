@@ -18,6 +18,7 @@ It is designed for Node.js HTTP stacks where query parameters arrive as strings 
 - **Filter DSL** with `$` operators and **nested AND/OR grouping**.
 - **Response validation** — `responseSchema` is a generic schema covering all possible responses based on your config; `validatorSchema(parsed.select)` validates outgoing data projected to the actual requested `select`. `z.infer<typeof responseSchema>` gives you **key autocompletion** narrowed to configured `selectable` paths.
 - **Discriminated union support** — `z.discriminatedUnion()` and `z.union()` as `dataSchema`, with compile-time and runtime discriminator enforcement.
+- **Decorative fields** — mark computed/manual fields as selectable-only (excluded from sort & filter)
 - **Standalone `select()`** utility for field-projection-only use cases.
 - Compatible with **OpenAPI tooling** ([zod-openapi](https://github.com/samchungy/zod-openapi) etc.).
 
@@ -167,6 +168,7 @@ Returns:
 |---|---:|---|
 | `dataSchema` | `z.ZodObject` \| `z.ZodDiscriminatedUnion` \| `z.ZodUnion` | Zod schema representing one data item. |
 | `selectable` | `string[]` (typed paths) | Allowlist of selectable fields (dot paths supported). |
+| `decorative?` | `string[]` (typed paths) | Subset of `selectable`. Fields that are added manually (not from DB). Included in `decorativeFields` output. |
 | `defaultSelect` | `field[] \| "*"` | **Required.** Default when `select` is missing. `"*"` expands to `selectable`. |
 | `responseType` | `"many" \| "one"` | Shape of `data` in the response (default: `"many"`). |
 
@@ -271,6 +273,7 @@ Returns:
 | `paginationType` | `"LIMIT_OFFSET"` \| `"CURSOR"` | Pagination mode. |
 | `dataSchema` | `z.ZodObject` \| `z.ZodDiscriminatedUnion` \| `z.ZodUnion` | Zod schema for one data item (used for projection + cursor inference). |
 | `selectable` | `string[]` (typed paths) | **Required.** Allowlist of selectable fields (dot paths). Enables `select`. |
+| `decorative?` | `string[]` (typed paths) | Subset of `selectable`. Fields added manually (not from DB). Cannot be sorted or filtered. Included in `decorativeSelect` output. |
 | `sortable?` | `string[]` (typed paths) | Allowlist of sortable fields. Enables `sortBy`. |
 | `filterable?` | object | Allowlist of filterable fields and allowed operators + field type. |
 | `defaultSortBy?` | `{ property, direction }[]` | Default sort if `sortBy` missing/empty. |
@@ -629,6 +632,99 @@ schema.safeParse({ data: [{ id: 1, type: "video", bitrate: 320 }] });
 // → fails validation
 ```
 
+## Decorative fields
+
+Some fields in your schema may be computed or added manually at runtime (e.g. image URLs, aggregated values) rather than stored in and fetched from the database. Marking them as `decorative` tells zod-paginate that they are **selectable** but must **not be sorted or filtered**.
+
+### Configuration
+
+```ts
+import { z } from "zod";
+import { paginate } from "zod-paginate";
+
+const ShowSummary = z.object({
+  id: z.number(),
+  title: z.string(),
+  urlAlias: z.string(),
+  image: z.string(),
+  genres: z.string().nullable(),
+});
+
+const PublicFeed = z.object({
+  id: z.number(),
+  title: z.string(),
+  shows: z.array(ShowSummary),
+});
+
+const { queryParamsSchema } = paginate({
+  paginationType: "LIMIT_OFFSET",
+  dataSchema: PublicFeed,
+  selectable: ["id", "title", "shows.id", "shows.title", "shows.image", "shows.genres"],
+  decorative: ["shows.image"],   // ← added at runtime, not from DB
+  sortable: ["id", "title"],     // "shows.image" here would be a type error
+  filterable: {
+    id: { type: "number", ops: ["$eq"] },
+    // "shows.image" here would be a type error
+  },
+  defaultSelect: "*",
+  defaultLimit: 20,
+  maxLimit: 100,
+});
+```
+
+### Parsed output
+
+The parsed payload includes `decorativeSelect` (or `decorativeFields` for `select()`), containing only the decorative fields that were actually requested:
+
+```ts
+const parsed = queryParamsSchema().parse({ select: "*" });
+
+parsed.pagination.select;
+// → ["id", "title", "shows.id", "shows.title", "shows.image", "shows.genres"]
+
+parsed.pagination.decorativeSelect;
+// → ["shows.image"]
+```
+
+When none of the requested fields are decorative, `decorativeSelect` is `undefined`.
+
+### Usage in adapters
+
+Your adapter can use `decorativeSelect` to skip those fields when building the database query:
+
+```ts
+const { select, decorativeSelect } = parsed.pagination;
+
+// Only query real DB fields
+const dbFields = select?.filter(f => !decorativeSelect?.includes(f));
+// → ["id", "title", "shows.id", "shows.title", "shows.genres"]
+
+const rows = await db.query(dbFields);
+
+// Then enrich with decorative fields manually
+const data = rows.map(row => ({
+  ...row,
+  shows: row.shows.map(s => ({ ...s, image: buildImageUrl(s) })),
+}));
+```
+
+### With `select()` standalone
+
+The same option works with `select()` — the output uses `decorativeFields` instead:
+
+```ts
+const { queryParamsSchema } = select({
+  dataSchema: ShowSummary,
+  selectable: ["id", "title", "urlAlias", "image", "genres"],
+  decorative: ["image"],
+  defaultSelect: "*",
+});
+
+const parsed = queryParamsSchema().parse({ select: "id,title,image" });
+parsed.select.fields;           // → ["id", "title", "image"]
+parsed.select.decorativeFields; // → ["image"]
+```
+
 ## Extending `queryParamsSchema`
 
 Both `select()` and `paginate()` support extending `queryParamsSchema` with additional fields:
@@ -777,7 +873,7 @@ export function select<
 | `SelectConfig<TSchema, TSelectable>` | Configuration for `select()` |
 | `SelectResult<TSchema, TSelectable, TResponseType?>` | Return type of `select()`. `TResponseType` narrows `validatorSchema` return and `responseType` property. |
 | `SelectQueryParams<TSchema, TSelectable>` | Parsed output of `select()` — `{ select: SelectQueryPayload }` |
-| `SelectQueryPayload<TSchema, TSelectable, TResponseType?>` | Inner select payload — `{ fields, responseType }`. Passed to `validatorSchema()`. |
+| `SelectQueryPayload<TSchema, TSelectable, TResponseType?>` | Inner select payload — `{ fields, decorativeFields?, responseType }`. Passed to `validatorSchema()`. |
 | `SelectOneQueryPayload<TSchema, TSelectable?>` | Shorthand for `SelectQueryPayload<…, 'one'>` |
 | `SelectManyQueryPayload<TSchema, TSelectable?>` | Shorthand for `SelectQueryPayload<…, 'many'>` |
 | `SelectResponse<TSchema, TSelect, TResponseType?>` | Response type: `{ data: … }` — array when `'many'`, single object when `'one'` |

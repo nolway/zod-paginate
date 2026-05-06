@@ -902,6 +902,126 @@ describe('paginate', () => {
       }),
     ).toThrow();
   });
+
+  describe('decorative fields', () => {
+    it('decorativeSelect is undefined when no decorative config is set', () => {
+      const { queryParamsSchema } = paginate({
+        paginationType: 'LIMIT_OFFSET',
+        dataSchema: ModelSchema,
+        selectable: ['id', 'status', 'createdAt', 'meta.score'],
+        defaultLimit: 20,
+        maxLimit: 100,
+        defaultSelect: '*',
+      });
+
+      const parsed = queryParamsSchema().parse({ select: '*' });
+
+      expect(parsed.pagination.type).toBe('LIMIT_OFFSET');
+      expect(parsed.pagination.decorativeSelect).toBeUndefined();
+    });
+
+    it('decorativeSelect is undefined when no decorative field is in the actual select', () => {
+      const { queryParamsSchema } = paginate({
+        paginationType: 'LIMIT_OFFSET',
+        dataSchema: ModelSchema,
+        decorative: ['status'],
+        selectable: ['id', 'status', 'createdAt', 'meta.score'],
+        defaultLimit: 20,
+        maxLimit: 100,
+        defaultSelect: '*',
+      });
+
+      const parsed = queryParamsSchema().parse({ select: 'id,createdAt' });
+
+      expect(parsed.pagination.type).toBe('LIMIT_OFFSET');
+      expect(parsed.pagination.decorativeSelect).toBeUndefined();
+    });
+
+    it('includes decorativeSelect when decorative fields are requested', () => {
+      const { queryParamsSchema } = paginate({
+        paginationType: 'LIMIT_OFFSET',
+        dataSchema: ModelSchema,
+        decorative: ['status'],
+        selectable: ['id', 'status', 'createdAt', 'meta.score'],
+        defaultLimit: 20,
+        maxLimit: 100,
+        defaultSelect: '*',
+      });
+
+      const parsed = queryParamsSchema().parse({ select: '*' });
+
+      expect(parsed.pagination.type).toBe('LIMIT_OFFSET');
+      expect(parsed.pagination.decorativeSelect).toEqual(['status']);
+    });
+
+    it('includes only the subset of decorative fields that are actually selected', () => {
+      const { queryParamsSchema } = paginate({
+        paginationType: 'LIMIT_OFFSET',
+        dataSchema: ModelSchema,
+        decorative: ['status', 'meta.score'],
+        selectable: ['id', 'status', 'createdAt', 'meta.score'],
+        defaultLimit: 20,
+        maxLimit: 100,
+        defaultSelect: '*',
+      });
+
+      const parsed = queryParamsSchema().parse({ select: 'id,status' });
+
+      expect(parsed.pagination.type).toBe('LIMIT_OFFSET');
+      expect(parsed.pagination.decorativeSelect).toEqual(['status']);
+    });
+
+    it('decorativeSelect works with CURSOR pagination', () => {
+      const { queryParamsSchema } = paginate({
+        paginationType: 'CURSOR',
+        dataSchema: ModelSchema,
+        cursorProperty: 'id',
+        decorative: ['status'],
+        selectable: ['id', 'status', 'createdAt', 'meta.score'],
+        defaultLimit: 20,
+        maxLimit: 100,
+        defaultSelect: '*',
+      });
+
+      const parsed = queryParamsSchema().parse({ select: '*' });
+
+      expect(parsed.pagination.type).toBe('CURSOR');
+      expect(parsed.pagination.decorativeSelect).toEqual(['status']);
+    });
+
+    it('decorative fields cannot appear in sortable', () => {
+      const { queryParamsSchema } = paginate({
+        paginationType: 'LIMIT_OFFSET',
+        dataSchema: ModelSchema,
+        decorative: ['status'],
+        selectable: ['id', 'status', 'createdAt', 'meta.score'],
+        sortable: ['id', 'createdAt'],
+        defaultLimit: 20,
+        maxLimit: 100,
+        defaultSelect: '*',
+      });
+
+      const result = queryParamsSchema().safeParse({ sortBy: 'status:ASC' });
+      expect(result.success).toBe(false);
+    });
+
+    it('decorativeSelect in defaultSelect', () => {
+      const { queryParamsSchema } = paginate({
+        paginationType: 'LIMIT_OFFSET',
+        dataSchema: ModelSchema,
+        decorative: ['status'],
+        selectable: ['id', 'status', 'createdAt', 'meta.score'],
+        defaultLimit: 20,
+        maxLimit: 100,
+        defaultSelect: ['id', 'status'],
+      });
+
+      const parsed = queryParamsSchema().parse({});
+
+      expect(parsed.pagination.type).toBe('LIMIT_OFFSET');
+      expect(parsed.pagination.decorativeSelect).toEqual(['status']);
+    });
+  });
 });
 
 /* ---------------------------------- */

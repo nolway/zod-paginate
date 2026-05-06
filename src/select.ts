@@ -835,6 +835,8 @@ export interface SelectConfig<
   dataSchema: TSchema;
   /** Allowlist of selectable fields (dot-notation paths supported). */
   selectable: readonly TSelect[];
+  /** Fields that are decorative (added manually, not from DB). Subset of selectable. */
+  decorative?: readonly TSelect[];
   /** Default fields returned when `select` is omitted from the query. Use `"*"` to select all. */
   defaultSelect: readonly TSelect[] | '*';
   /** Shape of `data` in the response: `"many"` returns an array, `"one"` returns a single object. @default "many" */
@@ -882,6 +884,8 @@ export interface SelectQueryPayload<
   TResponseType extends SelectResponseType = SelectResponseType,
 > {
   fields: TSelect[];
+  /** Subset of `fields` that are decorative (not from DB, added manually). */
+  decorativeFields?: TSelect[];
   responseType: TResponseType;
 }
 
@@ -983,10 +987,12 @@ export function select<
 >(
   config: Omit<
     SelectConfig<TSchema, TSelectable[number], 'one'>,
-    'selectable' | 'defaultSelect'
+    'selectable' | 'defaultSelect' | 'decorative'
   > & {
     /** Allowlist of selectable fields (dot-notation paths). Enables the `select` query parameter. */
     selectable: NoDuplicates<TSelectable> & EnsureDiscriminatorInSelectable<TSchema, TSelectable>;
+    /** Fields that are decorative (added manually, not from DB). Subset of selectable. */
+    decorative?: readonly NoInfer<TSelectable[number]>[];
     /** Default fields returned when `select` is omitted. Use `"*"` to select all. */
     defaultSelect: NoDuplicates<TDefaultSelect> | '*';
     /** Shape of `data` in the response: `"one"` returns a single object. */
@@ -1001,9 +1007,14 @@ export function select<
     TSelectable[number]
   >[],
 >(
-  config: Omit<SelectConfig<TSchema, TSelectable[number]>, 'selectable' | 'defaultSelect'> & {
+  config: Omit<
+    SelectConfig<TSchema, TSelectable[number]>,
+    'selectable' | 'defaultSelect' | 'decorative'
+  > & {
     /** Allowlist of selectable fields (dot-notation paths). Enables the `select` query parameter. */
     selectable: NoDuplicates<TSelectable> & EnsureDiscriminatorInSelectable<TSchema, TSelectable>;
+    /** Fields that are decorative (added manually, not from DB). Subset of selectable. */
+    decorative?: readonly NoInfer<TSelectable[number]>[];
     /** Default fields returned when `select` is omitted. Use `"*"` to select all. */
     defaultSelect: NoDuplicates<TDefaultSelect> | '*';
     /** Shape of `data` in the response: `"many"` returns an array (default). */
@@ -1014,16 +1025,19 @@ export function select<
 export function select<
   TSchema extends DataSchema,
   const TSelectable extends readonly AllowedSelectablePath<TSchema>[],
+  const TDecorative extends readonly NoInfer<TSelectable[number]>[] = readonly [],
   const TDefaultSelect extends readonly NoInfer<TSelectable[number]>[] = readonly NoInfer<
     TSelectable[number]
   >[],
 >(
   config: Omit<
     SelectConfig<TSchema, TSelectable[number], SelectResponseType>,
-    'selectable' | 'defaultSelect'
+    'selectable' | 'defaultSelect' | 'decorative'
   > & {
     /** Allowlist of selectable fields (dot-notation paths). Enables the `select` query parameter. */
     selectable: NoDuplicates<TSelectable> & EnsureDiscriminatorInSelectable<TSchema, TSelectable>;
+    /** Fields that are decorative (added manually, not from DB). Subset of selectable. */
+    decorative?: NoDuplicates<TDecorative>;
     /** Default fields returned when `select` is omitted. Use `"*"` to select all. */
     defaultSelect: NoDuplicates<TDefaultSelect> | '*';
   },
@@ -1033,6 +1047,7 @@ export function select<
   const nestedDiscriminators = findNestedDiscriminators(config.dataSchema);
 
   const selectableStrings: string[] = [...config.selectable];
+  const decorativeSet = new Set<string>((config.decorative ?? []).map(String));
 
   const effectiveConfig: UntypedSelectableConfig = {
     selectable: selectableStrings,
@@ -1150,7 +1165,14 @@ export function select<
             (field): field is TSelectable[number] => typeof field === 'string',
           );
 
-          return { select: { fields: typedSelect, responseType } };
+          const decorativeFields = typedSelect.filter((f) => decorativeSet.has(String(f)));
+          return {
+            select: {
+              fields: typedSelect,
+              ...(decorativeFields.length > 0 ? { decorativeFields } : {}),
+              responseType,
+            },
+          };
         }),
     );
 

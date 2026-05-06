@@ -659,6 +659,8 @@ export interface CommonQueryConfigFromSchema<
 
   /** Allowlist of selectable fields (dot-notation paths). Enables the `select` query parameter. */
   selectable: readonly TSelectable[];
+  /** Fields that are decorative (added manually, not from DB). Cannot be sorted or filtered. Subset of selectable. */
+  decorative?: readonly AllowedPath<TSchema>[];
   /** Allowlist of sortable fields. Enables the `sortBy` query parameter. Unknown sort fields are rejected. */
   sortable?: readonly AllowedPath<TSchema>[];
 
@@ -831,6 +833,8 @@ export interface LimitOffsetPaginationPayload<TSchema extends DataSchema> {
   page?: number;
   sortBy?: SortItemTyped<TSchema>[];
   select?: AllowedPath<TSchema>[];
+  /** Subset of `select` that are decorative (not from DB, added manually). */
+  decorativeSelect?: AllowedPath<TSchema>[];
   filters?: WhereNode;
 }
 
@@ -845,6 +849,8 @@ export interface CursorPaginationPayload<TSchema extends DataSchema> {
   cursorProperty: AllowedPath<TSchema>;
   sortBy?: SortItemTyped<TSchema>[];
   select?: AllowedPath<TSchema>[];
+  /** Subset of `select` that are decorative (not from DB, added manually). */
+  decorativeSelect?: AllowedPath<TSchema>[];
   filters?: WhereNode;
 }
 
@@ -1234,6 +1240,8 @@ export function paginate<
     LimitOffsetPaginationConfig & {
       /** Allowlist of selectable fields (dot-notation paths). Enables the `select` query parameter. */
       selectable: NoDuplicates<TSelectable> & EnsureDiscriminatorInSelectable<TSchema, TSelectable>;
+      /** Fields that are decorative (added manually, not from DB). Cannot be sorted or filtered. */
+      decorative?: readonly NoInfer<TSelectable[number]>[];
       /** Default fields returned when `select` is omitted. Use `"*"` to select all. */
       defaultSelect: NoDuplicates<TDefaultSelect> | '*';
       /** Allowlist of sortable fields. Enables the `sortBy` query parameter. Unknown sort fields are rejected. */
@@ -1270,6 +1278,8 @@ export function paginate<
     CursorPaginationConfig<InferData<TSchema>> & {
       /** Allowlist of selectable fields (dot-notation paths). Enables the `select` query parameter. */
       selectable: NoDuplicates<TSelectable> & EnsureDiscriminatorInSelectable<TSchema, TSelectable>;
+      /** Fields that are decorative (added manually, not from DB). Cannot be sorted or filtered. */
+      decorative?: readonly NoInfer<TSelectable[number]>[];
       /** Default fields returned when `select` is omitted. Use `"*"` to select all. */
       defaultSelect: NoDuplicates<TDefaultSelect> | '*';
       /** Allowlist of sortable fields. Enables the `sortBy` query parameter. Unknown sort fields are rejected. */
@@ -1305,6 +1315,8 @@ export function paginate<
   > & {
     /** Allowlist of selectable fields (dot-notation paths). Enables the `select` query parameter. */
     selectable: NoDuplicates<TSelectable> & EnsureDiscriminatorInSelectable<TSchema, TSelectable>;
+    /** Fields that are decorative (added manually, not from DB). Cannot be sorted or filtered. */
+    decorative?: readonly NoInfer<TSelectable[number]>[];
     /** Default fields returned when `select` is omitted. Use `"*"` to select all. */
     defaultSelect: NoDuplicates<TDefaultSelect> | '*';
     /** Allowlist of sortable fields. Enables the `sortBy` query parameter. Unknown sort fields are rejected. */
@@ -1323,16 +1335,19 @@ export function paginate<
 export function paginate<
   TSchema extends DataSchema,
   const TSelectable extends readonly AllowedSelectablePath<TSchema>[],
-  const TSortable extends readonly NoInfer<TSelectable[number]>[] = readonly NoInfer<
-    TSelectable[number]
-  >[],
+  const TDecorative extends readonly NoInfer<TSelectable[number]>[] = readonly [],
+  const TSortable extends readonly Exclude<NoInfer<TSelectable[number]>, TDecorative[number]>[] =
+    readonly Exclude<NoInfer<TSelectable[number]>, TDecorative[number]>[],
   const TDefaultSelect extends readonly NoInfer<TSelectable[number]>[] = readonly NoInfer<
     TSelectable[number]
   >[],
   const TDefaultSortBy extends readonly {
-    property: NoInfer<TSelectable[number]>;
+    property: Exclude<NoInfer<TSelectable[number]>, TDecorative[number]>;
     direction: SortDirection;
-  }[] = readonly { property: NoInfer<TSelectable[number]>; direction: SortDirection }[],
+  }[] = readonly {
+    property: Exclude<NoInfer<TSelectable[number]>, TDecorative[number]>;
+    direction: SortDirection;
+  }[],
 >(
   config: Omit<
     CommonQueryConfigFromSchema<TSchema, TSelectable[number]>,
@@ -1340,6 +1355,8 @@ export function paginate<
   > & {
     /** Allowlist of selectable fields (dot-notation paths). Enables the `select` query parameter. */
     selectable: NoDuplicates<TSelectable> & EnsureDiscriminatorInSelectable<TSchema, TSelectable>;
+    /** Fields that are decorative (added manually, not from DB). Cannot be sorted or filtered. */
+    decorative?: NoDuplicates<TDecorative>;
     /** Default fields returned when `select` is omitted. Use `"*"` to select all. */
     defaultSelect: NoDuplicates<TDefaultSelect> | '*';
     /** Allowlist of sortable fields. Enables the `sortBy` query parameter. Unknown sort fields are rejected. */
@@ -1348,7 +1365,7 @@ export function paginate<
     defaultSortBy?: NoDuplicateProperties<TDefaultSortBy>;
     /** Map of filterable fields to their allowed type and operators. Enables the `filter.*` query parameters. */
     filterable?: Partial<{
-      [P in TSelectable[number]]: FilterableFieldConfig<
+      [P in Exclude<TSelectable[number], TDecorative[number]>]: FilterableFieldConfig<
         FieldTypeFromValue<PathValue<InferData<TSchema>, P>>
       >;
     }>;
@@ -1365,6 +1382,7 @@ export function paginate<
   };
 
   const allowedSelectable = new Set<string>(selectableStrings);
+  const decorativeSet = new Set<string>((config.decorative ?? []).map(String));
 
   const allowedSortable = new Set<string>();
   for (const f of config.sortable ?? []) allowedSortable.add(`${f}`);
@@ -1699,6 +1717,7 @@ export function paginate<
             : {};
 
           if (config.paginationType === 'LIMIT_OFFSET') {
+            const decorativeSelect = select?.filter((f) => decorativeSet.has(f));
             return {
               pagination: {
                 type: 'LIMIT_OFFSET',
@@ -1706,6 +1725,7 @@ export function paginate<
                 page: val.page,
                 sortBy,
                 select,
+                ...(decorativeSelect && decorativeSelect.length > 0 ? { decorativeSelect } : {}),
                 ...maybeFilters,
               },
             };
@@ -1717,6 +1737,7 @@ export function paginate<
             cursor = coerceCursorFromProperty(config.dataSchema, config.cursorProperty, val.cursor);
           }
 
+          const decorativeSelect = select?.filter((f) => decorativeSet.has(f));
           return {
             pagination: {
               type: 'CURSOR',
@@ -1725,6 +1746,7 @@ export function paginate<
               cursorProperty: config.cursorProperty,
               sortBy,
               select,
+              ...(decorativeSelect && decorativeSelect.length > 0 ? { decorativeSelect } : {}),
               ...maybeFilters,
             },
           };

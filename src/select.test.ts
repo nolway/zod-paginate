@@ -449,6 +449,72 @@ describe('select', () => {
     expect(parsed.select.fields).toEqual(['id', 'meta.score']);
     expect(parsed.search).toBe('test');
   });
+
+  describe('decorative fields', () => {
+    it('decorativeFields is undefined when no decorative config is set', () => {
+      const { queryParamsSchema } = select({
+        dataSchema: ModelSchema,
+        selectable: ['id', 'status', 'meta.score'],
+        defaultSelect: '*',
+      });
+
+      const parsed = queryParamsSchema().parse({ select: '*' });
+
+      expect(parsed.select.decorativeFields).toBeUndefined();
+    });
+
+    it('decorativeFields is undefined when no decorative field is in the select', () => {
+      const { queryParamsSchema } = select({
+        dataSchema: ModelSchema,
+        selectable: ['id', 'status', 'meta.score'],
+        defaultSelect: '*',
+        decorative: ['status'],
+      });
+
+      const parsed = queryParamsSchema().parse({ select: 'id,meta.score' });
+
+      expect(parsed.select.decorativeFields).toBeUndefined();
+    });
+
+    it('includes decorativeFields when decorative fields are selected', () => {
+      const { queryParamsSchema } = select({
+        dataSchema: ModelSchema,
+        selectable: ['id', 'status', 'meta.score'],
+        defaultSelect: '*',
+        decorative: ['status'],
+      });
+
+      const parsed = queryParamsSchema().parse({ select: '*' });
+
+      expect(parsed.select.decorativeFields).toEqual(['status']);
+    });
+
+    it('includes only the subset of decorative fields that are actually selected', () => {
+      const { queryParamsSchema } = select({
+        dataSchema: ModelSchema,
+        selectable: ['id', 'status', 'meta.score'],
+        defaultSelect: '*',
+        decorative: ['status', 'meta.score'],
+      });
+
+      const parsed = queryParamsSchema().parse({ select: 'id,status' });
+
+      expect(parsed.select.decorativeFields).toEqual(['status']);
+    });
+
+    it('decorativeFields in defaultSelect', () => {
+      const { queryParamsSchema } = select({
+        dataSchema: ModelSchema,
+        selectable: ['id', 'status', 'meta.score'],
+        defaultSelect: ['id', 'status'],
+        decorative: ['status'],
+      });
+
+      const parsed = queryParamsSchema().parse({});
+
+      expect(parsed.select.decorativeFields).toEqual(['status']);
+    });
+  });
 });
 
 /* ---------------------------------- */
