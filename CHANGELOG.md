@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.11.0](https://github.com/nolway/zod-paginate/compare/v1.10.2...v1.11.0) (2026-05-06)
+
+
+### Features
+
+* add decorative select ([e1f40f6](https://github.com/nolway/zod-paginate/commit/e1f40f6b439d6272b44a0cdddaaa525cb781d618))
+
+
+### Miscellaneous Chores
+
+* release 1.11.0 ([0a99070](https://github.com/nolway/zod-paginate/commit/0a99070d496b74d60263c26479ba5ad444b2c54d))
+
 ## [1.10.2](https://github.com/nolway/zod-paginate/compare/v1.10.1...v1.10.2) (2026-04-29)
 
 
