@@ -104,9 +104,9 @@ describe('Integration: LIMIT_OFFSET full flow', () => {
       page: '3',
       select: 'id,username,email,age',
       sortBy: ['age:ASC', 'username:DESC'],
-      'filter.role': '$in:admin,editor',
-      'filter.age': ['$gte:18', '$and:$lte:65'],
-      'filter.createdAt': '$gt:2024-01-01',
+      'filter[role]': '$in:admin,editor',
+      'filter[age]': ['$gte:18', '$and:$lte:65'],
+      'filter[createdAt]': '$gt:2024-01-01',
     });
 
     expect(parsed.pagination.type).toBe('LIMIT_OFFSET');
@@ -198,13 +198,11 @@ describe('Integration: LIMIT_OFFSET full flow', () => {
 
     const parsed = queryParamsSchema().parse({
       // Group 1: role = admin OR role = editor
-      'filter.role': ['$g:1:$eq:admin', '$g:1:$or:$eq:editor'],
+      'filter[role]': ['$g:1:$eq:admin', '$g:1:$or:$eq:editor'],
       // Group 2: age >= 18 AND age <= 65
-      'filter.age': ['$g:2:$gte:18', '$g:2:$and:$lte:65'],
+      'filter[age]': ['$g:2:$gte:18', '$g:2:$and:$lte:65'],
 
-      'group.1.parent': '0',
-      'group.2.parent': '0',
-      'group.2.join': '$and',
+      group: ['1:parent=0', '2:parent=0,join=$and'],
     });
 
     const root = parsed.pagination.filters;
@@ -221,8 +219,8 @@ describe('Integration: LIMIT_OFFSET full flow', () => {
     const { queryParamsSchema } = setup();
 
     const parsed = queryParamsSchema().parse({
-      'filter.createdAt': '$not:$null',
-      'filter.username': '$not:$ilike:test',
+      'filter[createdAt]': '$not:$null',
+      'filter[username]': '$not:$ilike:test',
     });
 
     const leaves = collectLeaves(parsed.pagination.filters);
@@ -269,8 +267,8 @@ describe('Integration: LIMIT_OFFSET full flow', () => {
       page: '1',
       select: 'id,username,age,role',
       sortBy: 'age:ASC',
-      'filter.role': '$eq:admin',
-      'filter.age': '$gte:21',
+      'filter[role]': '$eq:admin',
+      'filter[age]': '$gte:21',
     });
 
     const v = validatorSchema(parsed.pagination);
@@ -299,7 +297,7 @@ describe('Integration: LIMIT_OFFSET full flow', () => {
     expect(() =>
       queryParamsSchema().parse({
         limit: '999',
-        'filter.unknown': '$eq:test',
+        'filter[unknown]': '$eq:test',
         sortBy: 'id:SIDEWAYS',
       }),
     ).toThrow();
@@ -309,7 +307,7 @@ describe('Integration: LIMIT_OFFSET full flow', () => {
     const { queryParamsSchema } = setup();
 
     const parsed = queryParamsSchema().parse({
-      'filter.createdAt': '$btw:2024-01-01,2024-12-31',
+      'filter[createdAt]': '$btw:2024-01-01,2024-12-31',
     });
 
     const leaves = collectLeaves(parsed.pagination.filters);
@@ -319,7 +317,7 @@ describe('Integration: LIMIT_OFFSET full flow', () => {
     // Reject mixed types in $btw (number + date)
     expect(() =>
       queryParamsSchema().parse({
-        'filter.createdAt': '$btw:2024-01-01,42',
+        'filter[createdAt]': '$btw:2024-01-01,42',
       }),
     ).toThrow();
   });
@@ -328,7 +326,7 @@ describe('Integration: LIMIT_OFFSET full flow', () => {
     const { queryParamsSchema } = setup();
 
     const parsed = queryParamsSchema().parse({
-      'filter.age': '$btw:18,99',
+      'filter[age]': '$btw:18,99',
     });
 
     const leaves = collectLeaves(parsed.pagination.filters);
@@ -340,7 +338,7 @@ describe('Integration: LIMIT_OFFSET full flow', () => {
     const { queryParamsSchema } = setup();
 
     const parsed = queryParamsSchema().parse({
-      'filter.username': ['$sw:al', '$or:$ilike:bob'],
+      'filter[username]': ['$sw:al', '$or:$ilike:bob'],
     });
 
     const leaves = collectLeaves(parsed.pagination.filters);
@@ -352,7 +350,7 @@ describe('Integration: LIMIT_OFFSET full flow', () => {
     const { queryParamsSchema } = setup();
 
     const parsed = queryParamsSchema().parse({
-      'filter.email': '$contains:example.com,test.org',
+      'filter[email]': '$contains:example.com,test.org',
     });
 
     const leaves = collectLeaves(parsed.pagination.filters);
@@ -418,8 +416,8 @@ describe('Integration: CURSOR full flow', () => {
       limit: '10',
       select: 'id,title,status,author.name,stats.views',
       sortBy: 'publishedAt:DESC',
-      'filter.status': '$eq:published',
-      'filter.stats.views': '$gte:100',
+      'filter[status]': '$eq:published',
+      'filter[stats.views]': '$gte:100',
     });
 
     expect(parsed.pagination.type).toBe('CURSOR');
@@ -518,8 +516,8 @@ describe('Integration: CURSOR full flow', () => {
       limit: '5',
       select: 'id,title,stats.views,stats.likes,author.name',
       sortBy: ['stats.views:DESC', 'id:ASC'],
-      'filter.status': '$in:published,featured',
-      'filter.stats.views': '$gte:50',
+      'filter[status]': '$in:published,featured',
+      'filter[stats.views]': '$gte:50',
     });
 
     const v = validatorSchema(parsed.pagination);
@@ -561,13 +559,11 @@ describe('Integration: CURSOR full flow', () => {
     const parsed = queryParamsSchema().parse({
       cursor: '50',
       // Group 1: status published OR featured
-      'filter.status': ['$g:1:$eq:published', '$g:1:$or:$eq:featured'],
+      'filter[status]': ['$g:1:$eq:published', '$g:1:$or:$eq:featured'],
       // Group 2: views >= 100 AND views <= 10000
-      'filter.stats.views': ['$g:2:$gte:100', '$g:2:$and:$lte:10000'],
+      'filter[stats.views]': ['$g:2:$gte:100', '$g:2:$and:$lte:10000'],
 
-      'group.1.parent': '0',
-      'group.2.parent': '0',
-      'group.2.join': '$and',
+      group: ['1:parent=0', '2:parent=0,join=$and'],
     });
 
     const root = parsed.pagination.filters;
@@ -857,7 +853,7 @@ describe('Integration: Edge cases', () => {
     });
 
     const parsed = queryParamsSchema().parse({
-      'filter.age': ['$gte:18', '$and:$lte:65'],
+      'filter[age]': ['$gte:18', '$and:$lte:65'],
     });
 
     const leaves = collectLeaves(parsed.pagination.filters);
@@ -880,7 +876,7 @@ describe('Integration: Edge cases', () => {
 
     // Plain value without $op: prefix should be treated as $eq
     const parsed = queryParamsSchema().parse({
-      'filter.role': 'admin',
+      'filter[role]': 'admin',
     });
 
     const leaves = collectLeaves(parsed.pagination.filters);
@@ -905,18 +901,13 @@ describe('Integration: Edge cases', () => {
 
     const parsed = queryParamsSchema().parse({
       // Group 1: role = admin
-      'filter.role': '$g:1:$eq:admin',
+      'filter[role]': '$g:1:$eq:admin',
       // Group 2: age 18..65 (child of group 1)
-      'filter.age': ['$g:2:$gte:18', '$g:2:$and:$lte:65'],
+      'filter[age]': ['$g:2:$gte:18', '$g:2:$and:$lte:65'],
       // Group 3: username contains "test" (child of group 1, joined with OR to group 2)
-      'filter.username': '$g:3:$ilike:test',
+      'filter[username]': '$g:3:$ilike:test',
 
-      'group.1.parent': '0',
-      'group.1.op': '$and',
-
-      'group.2.parent': '1',
-      'group.3.parent': '1',
-      'group.3.join': '$or',
+      group: ['1:parent=0,op=$and', '2:parent=1', '3:parent=1,join=$or'],
     });
 
     const root = parsed.pagination.filters;
@@ -1002,9 +993,9 @@ describe('Integration: Edge cases', () => {
       },
     });
 
-    // Simulates ?filter.role[]=$eq:admin&filter.role[]=$or:$eq:editor
+    // Simulates ?filter[role]=$eq:admin&filter[role]=$or:$eq:editor
     const parsed = queryParamsSchema().parse({
-      'filter.role': ['$eq:admin', '$or:$eq:editor'],
+      'filter[role]': ['$eq:admin', '$or:$eq:editor'],
     });
 
     const leaves = collectLeaves(parsed.pagination.filters);
@@ -1027,7 +1018,7 @@ describe('Integration: Edge cases', () => {
 
     const parsed = queryParamsSchema().parse({
       sortBy: 'id:ASC',
-      'filter.status': '$eq:published',
+      'filter[status]': '$eq:published',
     });
 
     const v = validatorSchema(parsed.pagination);
@@ -1257,7 +1248,7 @@ describe('Integration: queryParamsSchema with extra shape', () => {
 
     const parsed = extended.parse({
       sortBy: 'id:ASC',
-      'filter.username': '$eq:alice',
+      'filter[username]': '$eq:alice',
       search: 'test',
     });
 

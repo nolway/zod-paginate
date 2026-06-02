@@ -301,37 +301,49 @@ type GroupDefs = Record<string, GroupDef>;
 function extractGroupDefs(q: Record<string, unknown>): GroupDefs {
   const defs: GroupDefs = {};
 
-  for (const [k, v] of Object.entries(q)) {
-    if (!k.startsWith('group.')) continue;
+  const raw = q.group;
+  if (raw === undefined || raw === null) return defs;
 
-    const rest = k.slice('group.'.length);
-    const dotIdx = rest.indexOf('.');
-    if (dotIdx === -1) continue;
+  let entries: string[];
+  if (Array.isArray(raw)) {
+    entries = raw.filter((x): x is string => typeof x === 'string');
+  } else if (typeof raw === 'string') {
+    entries = [raw];
+  } else {
+    entries = [];
+  }
 
-    const groupIdRaw = rest.slice(0, dotIdx).trim();
-    const prop = rest.slice(dotIdx + 1).trim();
+  for (const entry of entries) {
+    // Format: "id:key=value,key=value"
+    const colonIdx = entry.indexOf(':');
+    if (colonIdx === -1) continue;
 
-    const parsedId = IntegerStringSchema.safeParse(groupIdRaw);
+    const idRaw = entry.slice(0, colonIdx).trim();
+    const propsRaw = entry.slice(colonIdx + 1).trim();
+
+    const parsedId = IntegerStringSchema.safeParse(idRaw);
     if (!parsedId.success) continue;
     const id = parsedId.data;
 
-    const first = Array.isArray(v) ? v[0] : v;
-    const valueStr = typeof first === 'string' ? first : '';
-
     const current = defs[id] ?? {};
 
-    if (prop === 'parent') {
-      defs[id] = { ...current, parent: IntegerStringSchema.parse(valueStr.trim()) };
-      continue;
+    for (const pair of propsRaw.split(',')) {
+      const eqIdx = pair.indexOf('=');
+      if (eqIdx === -1) continue;
+
+      const prop = pair.slice(0, eqIdx).trim();
+      const value = pair.slice(eqIdx + 1).trim();
+
+      if (prop === 'parent') {
+        current.parent = IntegerStringSchema.parse(value);
+      } else if (prop === 'join') {
+        current.join = CombinatorSchema.parse(value);
+      } else if (prop === 'op') {
+        current.op = CombinatorSchema.parse(value);
+      }
     }
-    if (prop === 'join') {
-      defs[id] = { ...current, join: CombinatorSchema.parse(valueStr.trim()) };
-      continue;
-    }
-    if (prop === 'op') {
-      defs[id] = { ...current, op: CombinatorSchema.parse(valueStr.trim()) };
-      continue;
-    }
+
+    defs[id] = current;
   }
 
   return defs;
@@ -341,7 +353,7 @@ function validateGroupDefs(defs: GroupDefs): void {
   const root = defs[ROOT_GROUP_ID];
   if (root && (root.parent !== undefined || root.join !== undefined)) {
     throw new Error(
-      `group.0 can only define "op". "parent" and "join" are not allowed on root group "0".`,
+      `Group "0" can only define "op". "parent" and "join" are not allowed on root group "0".`,
     );
   }
 
@@ -526,7 +538,7 @@ function assertSameKind(a: number | string, b: number | string, ctx: string): vo
   }
 }
 
-/** Parse a single "filter.<field>" DSL string into a Condition. */
+/** Parse a single "filter[field]" DSL string into a Condition. */
 function parseSingleCondition(raw: string): Condition {
   const parts = raw.split(':');
 
@@ -616,9 +628,10 @@ function extractAndNormalizeRawFilters(q: QueryStringRecord): Record<string, Con
   const result: Record<string, Condition[]> = {};
 
   for (const [k, v] of Object.entries(q)) {
-    if (!k.startsWith('filter.')) continue;
+    const match = /^filter\[([^\]]+)\]$/.exec(k);
+    if (!match) continue;
 
-    const field = k.slice('filter.'.length).trim();
+    const field = (match[1] ?? '').trim();
     if (!field) continue;
 
     const rawList = toStringArrayFromQueryString(v);
@@ -664,7 +677,7 @@ export interface CommonQueryConfigFromSchema<
   /** Allowlist of sortable fields. Enables the `sortBy` query parameter. Unknown sort fields are rejected. */
   sortable?: readonly AllowedPath<TSchema>[];
 
-  /** Map of filterable fields to their allowed type and operators. Enables the `filter.*` query parameters. */
+  /** Map of filterable fields to their allowed type and operators. Enables the `filter[*]` query parameters. */
   filterable?: Partial<{
     [P in AllowedPath<TSchema>]: FilterableFieldConfig<
       FieldTypeFromValue<PathValue<InferData<TSchema>, P>>
@@ -1248,7 +1261,7 @@ export function paginate<
       sortable?: NoDuplicates<TSortable>;
       /** Default sort order applied when `sortBy` is omitted from the query. */
       defaultSortBy?: NoDuplicateProperties<TDefaultSortBy>;
-      /** Map of filterable fields to their allowed type and operators. Enables the `filter.*` query parameters. */
+      /** Map of filterable fields to their allowed type and operators. Enables the `filter[*]` query parameters. */
       filterable?: Partial<{
         [P in NoInfer<TSelectable[number]>]: FilterableFieldConfig<
           FieldTypeFromValue<PathValue<InferData<TSchema>, P>>
@@ -1286,7 +1299,7 @@ export function paginate<
       sortable?: NoDuplicates<TSortable>;
       /** Default sort order applied when `sortBy` is omitted from the query. */
       defaultSortBy?: NoDuplicateProperties<TDefaultSortBy>;
-      /** Map of filterable fields to their allowed type and operators. Enables the `filter.*` query parameters. */
+      /** Map of filterable fields to their allowed type and operators. Enables the `filter[*]` query parameters. */
       filterable?: Partial<{
         [P in NoInfer<TSelectable[number]>]: FilterableFieldConfig<
           FieldTypeFromValue<PathValue<InferData<TSchema>, P>>
@@ -1323,7 +1336,7 @@ export function paginate<
     sortable?: NoDuplicates<TSortable>;
     /** Default sort order applied when `sortBy` is omitted from the query. */
     defaultSortBy?: NoDuplicateProperties<TDefaultSortBy>;
-    /** Map of filterable fields to their allowed type and operators. Enables the `filter.*` query parameters. */
+    /** Map of filterable fields to their allowed type and operators. Enables the `filter[*]` query parameters. */
     filterable?: Partial<{
       [P in NoInfer<TSelectable[number]>]: FilterableFieldConfig<
         FieldTypeFromValue<PathValue<InferData<TSchema>, P>>
@@ -1363,7 +1376,7 @@ export function paginate<
     sortable?: NoDuplicates<TSortable>;
     /** Default sort order applied when `sortBy` is omitted from the query. */
     defaultSortBy?: NoDuplicateProperties<TDefaultSortBy>;
-    /** Map of filterable fields to their allowed type and operators. Enables the `filter.*` query parameters. */
+    /** Map of filterable fields to their allowed type and operators. Enables the `filter[*]` query parameters. */
     filterable?: Partial<{
       [P in Exclude<TSelectable[number], TDecorative[number]>]: FilterableFieldConfig<
         FieldTypeFromValue<PathValue<InferData<TSchema>, P>>
@@ -1417,9 +1430,9 @@ export function paginate<
   /*
    * Build the root ZodObject with explicit named properties so that
    * OpenAPI tooling (zod-openapi, fastify-zod-openapi) can introspect
-   * the query parameters. Dynamic keys (filter.*, group.*) pass through
-   * via .catchall(z.unknown()). The actual validation/transforms happen
-   * in the piped baseSchema below.
+   * the query parameters. Filter fields use bracket notation (filter[field])
+   * and group uses a repeated "group" param. The actual validation/transforms
+   * happen in the piped baseSchema below.
    */
   const rootShape: Record<string, z.ZodType> = {
     limit: z
@@ -1466,6 +1479,29 @@ export function paginate<
       .meta({
         description: `Comma-separated list of fields to return. Use "*" for all. Allowed fields: ${config.selectable.join(', ')}. Default: ${defaultSelectDesc}`,
         example: defaultSelectDesc,
+      });
+  }
+
+  // Add filter[field] entries and group param only when filterable is configured
+  if (config.filterable) {
+    for (const [field, def] of Object.entries(filterable)) {
+      const ops = def.ops.join(', ');
+      rootShape[`filter[${field}]`] = z
+        .union([z.string(), z.array(z.string())])
+        .optional()
+        .meta({
+          description: `Filter on "${field}" (${def.type}). Supported operators: ${ops}. Format: "$op:value"`,
+          example: `${def.ops[0]}:value`,
+        });
+    }
+
+    rootShape.group = z
+      .union([z.string(), z.array(z.string())])
+      .optional()
+      .meta({
+        description:
+          'Group definitions for complex filter logic. Format: "id:key=value,key=value". Keys: parent, join ($and/$or), op ($and/$or)',
+        example: '1:parent=0,join=$and',
       });
   }
 
@@ -1687,7 +1723,7 @@ export function paginate<
             ctx.addIssue({
               code: 'custom',
               path: ['groupDefs'],
-              message: `group.* is not allowed without any filter.*`,
+              message: `group is not allowed without any filter[*]`,
             });
           } else if (hasAnyFilter) {
             try {
