@@ -31,7 +31,6 @@ import {
 /* ---------------------------------- */
 
 type QueryStringValue = string | string[] | undefined;
-type QueryStringRecord = Record<string, QueryStringValue>;
 
 /* ---------------------------------- */
 /* Pagination config */
@@ -624,9 +623,17 @@ function parseSingleCondition(raw: string): Condition {
 /* Extract raw filters */
 /* ---------------------------------- */
 
-function extractAndNormalizeRawFilters(q: QueryStringRecord): Record<string, Condition[]> {
+function toQueryStringValue(v: unknown): QueryStringValue {
+  if (v === undefined) return undefined;
+  if (typeof v === 'string') return v;
+  if (Array.isArray(v) && v.every((x): x is string => typeof x === 'string')) return v;
+  return undefined;
+}
+
+function extractAndNormalizeRawFilters(q: Record<string, unknown>): Record<string, Condition[]> {
   const result: Record<string, Condition[]> = {};
 
+  // Handle flat keys: filter[field] (frameworks that don't parse deep objects)
   for (const [k, v] of Object.entries(q)) {
     const match = /^filter\[([^\]]+)\]$/.exec(k);
     if (!match) continue;
@@ -634,27 +641,25 @@ function extractAndNormalizeRawFilters(q: QueryStringRecord): Record<string, Con
     const field = (match[1] ?? '').trim();
     if (!field) continue;
 
-    const rawList = toStringArrayFromQueryString(v);
+    const rawList = toStringArrayFromQueryString(toQueryStringValue(v));
     result[field] = rawList.filter(Boolean).map(parseSingleCondition);
   }
 
-  return result;
-}
+  // Handle nested object: filter: { field: value } (frameworks that parse deep objects)
+  const filterObj = q.filter;
+  if (filterObj && typeof filterObj === 'object' && !Array.isArray(filterObj)) {
+    for (const [field, v] of Object.entries(filterObj)) {
+      const trimmedField = field.trim();
+      if (!trimmedField) continue;
+      // Skip if already found via flat keys
+      if (result[trimmedField]) continue;
 
-function toQueryStringRecord(q: Record<string, unknown>): QueryStringRecord {
-  const out: QueryStringRecord = {};
-  for (const [k, v] of Object.entries(q)) {
-    if (typeof v === 'string') {
-      out[k] = v;
-      continue;
+      const rawList = toStringArrayFromQueryString(toQueryStringValue(v));
+      result[trimmedField] = rawList.filter(Boolean).map(parseSingleCondition);
     }
-    if (Array.isArray(v) && v.every((x) => typeof x === 'string')) {
-      out[k] = v;
-      continue;
-    }
-    out[k] = undefined;
   }
-  return out;
+
+  return result;
 }
 
 interface FilterableFieldConfig<TKind extends FieldType> {
@@ -1482,11 +1487,12 @@ export function paginate<
       });
   }
 
-  // Add filter[field] entries and group param only when filterable is configured
+  // Add filter as a deep object and group param only when filterable is configured
   if (config.filterable) {
+    const filterShape: Record<string, z.ZodType> = {};
     for (const [field, def] of Object.entries(filterable)) {
       const ops = def.ops.join(', ');
-      rootShape[`filter[${field}]`] = z
+      filterShape[field] = z
         .union([z.string(), z.array(z.string())])
         .optional()
         .meta({
@@ -1494,6 +1500,21 @@ export function paginate<
           example: `${def.ops[0]}:value`,
         });
     }
+    const filterFields = Object.entries(filterable)
+      .map(([field, def]) => `  - ${field} (${def.type}): ${def.ops.join(', ')}`)
+      .join('\n');
+
+    rootShape.filter = z
+      .object(filterShape)
+      .optional()
+      .meta({
+        description: `Filter conditions. Each property supports operators in the format "$op:value".\nAvailable fields:\n${filterFields}`,
+        param: {
+          style: 'deepObject',
+          explode: true,
+          description: `Filter conditions using deep object notation (filter[field]=$op:value).\nAvailable fields:\n${filterFields}`,
+        },
+      });
 
     rootShape.group = z
       .union([z.string(), z.array(z.string())])
@@ -1515,11 +1536,9 @@ export function paginate<
         rawFilters: Record<string, Condition[]>;
         groupDefs: GroupDefs;
       } => {
-        const qs = toQueryStringRecord(q);
-
         return {
           ...q,
-          rawFilters: extractAndNormalizeRawFilters(qs),
+          rawFilters: extractAndNormalizeRawFilters(q),
           groupDefs: extractGroupDefs(q),
         };
       },
