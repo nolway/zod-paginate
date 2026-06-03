@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.0.1](https://github.com/nolway/zod-paginate/compare/v2.0.0...v2.0.1) (2026-06-03)
+
+
+### Bug Fixes
+
+* render query param deep object correctly ([54ed76e](https://github.com/nolway/zod-paginate/commit/54ed76e0c406225079c84f6426aeb6b9323b7610))
+
 ## [2.0.0](https://github.com/nolway/zod-paginate/compare/v1.11.0...v2.0.0) (2026-06-02)
 
 
