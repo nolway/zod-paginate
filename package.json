@@ -1,6 +1,6 @@
 {
   "name": "zod-paginate",
-  "version": "2.0.1",
+  "version": "2.0.2",
   "description": "A small utility to parse and validate pagination using Zod",
   "keywords": [
     "zod",
