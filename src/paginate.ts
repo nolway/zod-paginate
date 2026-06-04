@@ -27,12 +27,6 @@ import {
 } from './select';
 
 /* ---------------------------------- */
-/* Querystring value types */
-/* ---------------------------------- */
-
-type QueryStringValue = string | string[] | undefined;
-
-/* ---------------------------------- */
 /* Pagination config */
 /* ---------------------------------- */
 
@@ -51,16 +45,6 @@ interface CursorPaginationConfig<T> {
 /* ---------------------------------- */
 /* Common input normalizers */
 /* ---------------------------------- */
-
-/**
- * We often want to allow both single values and arrays in the querystring, e.g. "select=field1,field2" or "select[]=field1&select[]=field2".
- * This function normalizes both cases to a string array.
- */
-function toStringArrayFromQueryString(v: QueryStringValue): string[] {
-  if (v === undefined) return [];
-  if (Array.isArray(v)) return v;
-  return [v];
-}
 
 /**
  * Zod schema for a querystring parameter that can be either a single string or an array of strings.
@@ -313,7 +297,7 @@ function extractGroupDefs(q: Record<string, unknown>): GroupDefs {
   }
 
   for (const entry of entries) {
-    // Format: "id:key=value,key=value"
+    // Format: "id:key:value,key:value"
     const colonIdx = entry.indexOf(':');
     if (colonIdx === -1) continue;
 
@@ -327,11 +311,11 @@ function extractGroupDefs(q: Record<string, unknown>): GroupDefs {
     const current = defs[id] ?? {};
 
     for (const pair of propsRaw.split(',')) {
-      const eqIdx = pair.indexOf('=');
-      if (eqIdx === -1) continue;
+      const pairColonIdx = pair.indexOf(':');
+      if (pairColonIdx === -1) continue;
 
-      const prop = pair.slice(0, eqIdx).trim();
-      const value = pair.slice(eqIdx + 1).trim();
+      const prop = pair.slice(0, pairColonIdx).trim();
+      const value = pair.slice(pairColonIdx + 1).trim();
 
       if (prop === 'parent') {
         current.parent = IntegerStringSchema.parse(value);
@@ -537,7 +521,7 @@ function assertSameKind(a: number | string, b: number | string, ctx: string): vo
   }
 }
 
-/** Parse a single "filter[field]" DSL string into a Condition. */
+/** Parse a single filter DSL string into a Condition (e.g. "$eq:active", "$g:1:$or:$eq:value"). */
 function parseSingleCondition(raw: string): Condition {
   const parts = raw.split(':');
 
@@ -623,40 +607,36 @@ function parseSingleCondition(raw: string): Condition {
 /* Extract raw filters */
 /* ---------------------------------- */
 
-function toQueryStringValue(v: unknown): QueryStringValue {
-  if (v === undefined) return undefined;
-  if (typeof v === 'string') return v;
-  if (Array.isArray(v) && v.every((x): x is string => typeof x === 'string')) return v;
-  return undefined;
-}
-
 function extractAndNormalizeRawFilters(q: Record<string, unknown>): Record<string, Condition[]> {
   const result: Record<string, Condition[]> = {};
 
-  // Handle flat keys: filter[field] (frameworks that don't parse deep objects)
-  for (const [k, v] of Object.entries(q)) {
-    const match = /^filter\[([^\]]+)\]$/.exec(k);
-    if (!match) continue;
+  const raw = q.filter;
+  if (raw === undefined || raw === null) return result;
 
-    const field = (match[1] ?? '').trim();
-    if (!field) continue;
-
-    const rawList = toStringArrayFromQueryString(toQueryStringValue(v));
-    result[field] = rawList.filter(Boolean).map(parseSingleCondition);
+  let entries: string[];
+  if (Array.isArray(raw)) {
+    entries = raw.filter((x): x is string => typeof x === 'string');
+  } else if (typeof raw === 'string') {
+    entries = [raw];
+  } else {
+    entries = [];
   }
 
-  // Handle nested object: filter: { field: value } (frameworks that parse deep objects)
-  const filterObj = q.filter;
-  if (filterObj && typeof filterObj === 'object' && !Array.isArray(filterObj)) {
-    for (const [field, v] of Object.entries(filterObj)) {
-      const trimmedField = field.trim();
-      if (!trimmedField) continue;
-      // Skip if already found via flat keys
-      if (result[trimmedField]) continue;
+  for (const entry of entries) {
+    // Format: "field:$op:value" — first colon separates field from DSL
+    const colonIdx = entry.indexOf(':');
+    if (colonIdx === -1) continue;
 
-      const rawList = toStringArrayFromQueryString(toQueryStringValue(v));
-      result[trimmedField] = rawList.filter(Boolean).map(parseSingleCondition);
-    }
+    const field = entry.slice(0, colonIdx).trim();
+    if (!field) continue;
+
+    const dsl = entry.slice(colonIdx + 1);
+    if (!dsl) continue;
+
+    const condition = parseSingleCondition(dsl);
+    const list = result[field] ?? [];
+    list.push(condition);
+    result[field] = list;
   }
 
   return result;
@@ -682,7 +662,7 @@ export interface CommonQueryConfigFromSchema<
   /** Allowlist of sortable fields. Enables the `sortBy` query parameter. Unknown sort fields are rejected. */
   sortable?: readonly AllowedPath<TSchema>[];
 
-  /** Map of filterable fields to their allowed type and operators. Enables the `filter[*]` query parameters. */
+  /** Map of filterable fields to their allowed type and operators. Enables the `filter` query parameter. */
   filterable?: Partial<{
     [P in AllowedPath<TSchema>]: FilterableFieldConfig<
       FieldTypeFromValue<PathValue<InferData<TSchema>, P>>
@@ -1266,7 +1246,7 @@ export function paginate<
       sortable?: NoDuplicates<TSortable>;
       /** Default sort order applied when `sortBy` is omitted from the query. */
       defaultSortBy?: NoDuplicateProperties<TDefaultSortBy>;
-      /** Map of filterable fields to their allowed type and operators. Enables the `filter[*]` query parameters. */
+      /** Map of filterable fields to their allowed type and operators. Enables the `filter` query parameter. */
       filterable?: Partial<{
         [P in NoInfer<TSelectable[number]>]: FilterableFieldConfig<
           FieldTypeFromValue<PathValue<InferData<TSchema>, P>>
@@ -1304,7 +1284,7 @@ export function paginate<
       sortable?: NoDuplicates<TSortable>;
       /** Default sort order applied when `sortBy` is omitted from the query. */
       defaultSortBy?: NoDuplicateProperties<TDefaultSortBy>;
-      /** Map of filterable fields to their allowed type and operators. Enables the `filter[*]` query parameters. */
+      /** Map of filterable fields to their allowed type and operators. Enables the `filter` query parameter. */
       filterable?: Partial<{
         [P in NoInfer<TSelectable[number]>]: FilterableFieldConfig<
           FieldTypeFromValue<PathValue<InferData<TSchema>, P>>
@@ -1341,7 +1321,7 @@ export function paginate<
     sortable?: NoDuplicates<TSortable>;
     /** Default sort order applied when `sortBy` is omitted from the query. */
     defaultSortBy?: NoDuplicateProperties<TDefaultSortBy>;
-    /** Map of filterable fields to their allowed type and operators. Enables the `filter[*]` query parameters. */
+    /** Map of filterable fields to their allowed type and operators. Enables the `filter` query parameter. */
     filterable?: Partial<{
       [P in NoInfer<TSelectable[number]>]: FilterableFieldConfig<
         FieldTypeFromValue<PathValue<InferData<TSchema>, P>>
@@ -1381,7 +1361,7 @@ export function paginate<
     sortable?: NoDuplicates<TSortable>;
     /** Default sort order applied when `sortBy` is omitted from the query. */
     defaultSortBy?: NoDuplicateProperties<TDefaultSortBy>;
-    /** Map of filterable fields to their allowed type and operators. Enables the `filter[*]` query parameters. */
+    /** Map of filterable fields to their allowed type and operators. Enables the `filter` query parameter. */
     filterable?: Partial<{
       [P in Exclude<TSelectable[number], TDecorative[number]>]: FilterableFieldConfig<
         FieldTypeFromValue<PathValue<InferData<TSchema>, P>>
@@ -1435,9 +1415,9 @@ export function paginate<
   /*
    * Build the root ZodObject with explicit named properties so that
    * OpenAPI tooling (zod-openapi, fastify-zod-openapi) can introspect
-   * the query parameters. Filter fields use bracket notation (filter[field])
-   * and group uses a repeated "group" param. The actual validation/transforms
-   * happen in the piped baseSchema below.
+   * the query parameters. Both "filter" and "group" are repeated params
+   * (type: array of strings). The actual validation/transforms happen
+   * in the piped baseSchema below.
    */
   const rootShape: Record<string, z.ZodType> = {
     limit: z
@@ -1487,33 +1467,18 @@ export function paginate<
       });
   }
 
-  // Add filter as a deep object and group param only when filterable is configured
+  // Add filter and group params only when filterable is configured
   if (config.filterable) {
-    const filterShape: Record<string, z.ZodType> = {};
-    for (const [field, def] of Object.entries(filterable)) {
-      const ops = def.ops.join(', ');
-      filterShape[field] = z
-        .union([z.string(), z.array(z.string())])
-        .optional()
-        .meta({
-          description: `Filter on "${field}" (${def.type}). Supported operators: ${ops}. Format: "$op:value"`,
-          example: `${def.ops[0]}:value`,
-        });
-    }
     const filterFields = Object.entries(filterable)
       .map(([field, def]) => `  - ${field} (${def.type}): ${def.ops.join(', ')}`)
       .join('\n');
 
     rootShape.filter = z
-      .object(filterShape)
+      .union([z.string(), z.array(z.string())])
       .optional()
       .meta({
-        description: `Filter conditions. Each property supports operators in the format "$op:value".\nAvailable fields:\n${filterFields}`,
-        param: {
-          style: 'deepObject',
-          explode: true,
-          description: `Filter conditions using deep object notation (filter[field]=$op:value).\nAvailable fields:\n${filterFields}`,
-        },
+        description: `Filter conditions. Format: "field:$op:value". Repeat for multiple conditions.\nAvailable fields:\n${filterFields}`,
+        example: `${Object.keys(filterable)[0]}:${Object.values(filterable)[0]?.ops[0]}:value`,
       });
 
     rootShape.group = z
@@ -1521,8 +1486,8 @@ export function paginate<
       .optional()
       .meta({
         description:
-          'Group definitions for complex filter logic. Format: "id:key=value,key=value". Keys: parent, join ($and/$or), op ($and/$or)',
-        example: '1:parent=0,join=$and',
+          'Group definitions for complex filter logic. Format: "id:key:value,key:value". Keys: parent, join ($and/$or), op ($and/$or)',
+        example: '1:parent:0,join:$and',
       });
   }
 
@@ -1742,7 +1707,7 @@ export function paginate<
             ctx.addIssue({
               code: 'custom',
               path: ['groupDefs'],
-              message: `group is not allowed without any filter[*]`,
+              message: `group is not allowed without any filter`,
             });
           } else if (hasAnyFilter) {
             try {

@@ -210,8 +210,7 @@ describe('paginate', () => {
     const { queryParamsSchema } = makeLimitOffset();
 
     const parsed = queryParamsSchema().parse({
-      'filter[status]': '$eq:active',
-      'filter[id]': '$gt:10',
+      filter: ['status:$eq:active', 'id:$gt:10'],
     });
 
     expect(parsed.pagination.filters).toBeTruthy();
@@ -222,7 +221,7 @@ describe('paginate', () => {
     const { queryParamsSchema } = makeLimitOffset();
 
     const parsed = queryParamsSchema().parse({
-      'filter[createdAt]': '$not:$null',
+      filter: 'createdAt:$not:$null',
     });
 
     const root = parsed.pagination.filters;
@@ -245,7 +244,7 @@ describe('paginate', () => {
 
     expect(() =>
       queryParamsSchema().parse({
-        'filter[unknown]': '$eq:test',
+        filter: 'unknown:$eq:test',
       }),
     ).toThrow();
   });
@@ -255,7 +254,7 @@ describe('paginate', () => {
 
     expect(() =>
       queryParamsSchema().parse({
-        'filter[status]': '$gt:10',
+        filter: 'status:$gt:10',
       }),
     ).toThrow();
   });
@@ -265,13 +264,13 @@ describe('paginate', () => {
 
     expect(() =>
       queryParamsSchema().parse({
-        'filter[createdAt]': '$gt:123',
+        filter: 'createdAt:$gt:123',
       }),
     ).toThrow();
 
     expect(() =>
       queryParamsSchema().parse({
-        'filter[id]': '$gt:2022-01-01',
+        filter: 'id:$gt:2022-01-01',
       }),
     ).toThrow();
   });
@@ -281,7 +280,7 @@ describe('paginate', () => {
 
     expect(() =>
       queryParamsSchema().parse({
-        'filter[createdAt]': '$btw:2022-01-01,10',
+        filter: 'createdAt:$btw:2022-01-01,10',
       }),
     ).toThrow();
   });
@@ -290,7 +289,7 @@ describe('paginate', () => {
     const { queryParamsSchema } = makeLimitOffset();
 
     const parsed = queryParamsSchema().parse({
-      'filter[createdAt]': '$btw:2022-01-01,2022-01-10',
+      filter: 'createdAt:$btw:2022-01-01,2022-01-10',
     });
 
     expect(parsed.pagination.filters).toBeTruthy();
@@ -300,7 +299,7 @@ describe('paginate', () => {
     const { queryParamsSchema } = makeLimitOffset();
 
     const parsed = queryParamsSchema().parse({
-      'filter[id]': '$in:1,2,3',
+      filter: 'id:$in:1,2,3',
     });
 
     const root = parsed.pagination.filters;
@@ -317,10 +316,14 @@ describe('paginate', () => {
     const { queryParamsSchema } = makeLimitOffset();
 
     const parsed = queryParamsSchema().parse({
-      'filter[status]': ['$g:1:$eq:active', '$g:1:$or:$eq:postponed'],
-      'filter[createdAt]': ['$g:2:$not:$null', '$g:2:$and:$btw:2022-01-01,2022-02-01'],
+      filter: [
+        'status:$g:1:$eq:active',
+        'status:$g:1:$or:$eq:postponed',
+        'createdAt:$g:2:$not:$null',
+        'createdAt:$g:2:$and:$btw:2022-01-01,2022-02-01',
+      ],
 
-      group: ['1:parent=0', '2:parent=0,join=$and'],
+      group: ['1:parent:0', '2:parent:0,join:$and'],
     });
 
     expect(parsed.pagination.filters).toBeTruthy();
@@ -332,8 +335,8 @@ describe('paginate', () => {
 
     expect(() =>
       queryParamsSchema().parse({
-        'filter[status]': '$eq:active',
-        group: ['0:parent=1'],
+        filter: 'status:$eq:active',
+        group: ['0:parent:1'],
       }),
     ).toThrow();
   });
@@ -409,7 +412,7 @@ describe('paginate', () => {
 
     expect(() =>
       queryParamsSchema().parse({
-        'filter[status]': '$wat:active',
+        filter: 'status:$wat:active',
       }),
     ).toThrow();
   });
@@ -419,7 +422,7 @@ describe('paginate', () => {
 
     expect(() =>
       queryParamsSchema().parse({
-        'filter[status]': ['$g:1:$or:$eq:active'],
+        filter: ['status:$g:1:$or:$eq:active'],
       }),
     ).toThrow();
   });
@@ -429,8 +432,8 @@ describe('paginate', () => {
 
     expect(() =>
       queryParamsSchema().parse({
-        'filter[status]': '$g:1:$eq:active',
-        group: ['1:parent=0,join=$and'],
+        filter: 'status:$g:1:$eq:active',
+        group: ['1:parent:0,join:$and'],
       }),
     ).toThrow();
   });
@@ -440,8 +443,8 @@ describe('paginate', () => {
 
     expect(() =>
       queryParamsSchema().parse({
-        'filter[status]': '$g:1:$eq:active',
-        group: ['1:parent=2', '2:parent=1'],
+        filter: 'status:$g:1:$eq:active',
+        group: ['1:parent:2', '2:parent:1'],
       }),
     ).toThrow();
   });
@@ -450,10 +453,9 @@ describe('paginate', () => {
     const { queryParamsSchema } = makeLimitOffset();
 
     const parsed = queryParamsSchema().parse({
-      'filter[status]': ['$g:2:$eq:active'],
-      'filter[id]': ['$g:10:$eq:1'],
+      filter: ['status:$g:2:$eq:active', 'id:$g:10:$eq:1'],
 
-      group: ['2:parent=0', '10:parent=0,join=$or'],
+      group: ['2:parent:0', '10:parent:0,join:$or'],
     });
 
     const root = parsed.pagination.filters;
@@ -466,7 +468,7 @@ describe('paginate', () => {
 
     expect(() =>
       queryParamsSchema().parse({
-        'filter[createdAt]': '$btw:2022-01-01',
+        filter: 'createdAt:$btw:2022-01-01',
       }),
     ).toThrow();
   });
@@ -476,7 +478,7 @@ describe('paginate', () => {
 
     expect(() =>
       queryParamsSchema().parse({
-        'filter[status]': '$not:',
+        filter: 'status:$not:',
       }),
     ).toThrow();
   });
@@ -486,12 +488,10 @@ describe('paginate', () => {
 
     const parsed = queryParamsSchema().parse({
       // Group 1: status active
-      'filter[status]': '$g:1:$eq:active',
-
       // Group 2: (id > 10 OR id > 20), attached to group 1 with AND
-      'filter[id]': ['$g:2:$gt:10', '$g:2:$or:$gt:20'],
+      filter: ['status:$g:1:$eq:active', 'id:$g:2:$gt:10', 'id:$g:2:$or:$gt:20'],
 
-      group: ['1:parent=0,op=$and', '2:parent=1,join=$and'],
+      group: ['1:parent:0,op:$and', '2:parent:1,join:$and'],
     });
 
     const root = parsed.pagination.filters;
@@ -505,7 +505,7 @@ describe('paginate', () => {
 
     expect(() =>
       queryParamsSchema().parse({
-        'filter[status]': '$g:abc:$eq:active',
+        filter: 'status:$g:abc:$eq:active',
       }),
     ).toThrow();
   });
@@ -515,8 +515,8 @@ describe('paginate', () => {
 
     expect(() =>
       queryParamsSchema().parse({
-        'filter[status]': '$g:1:$eq:active',
-        group: ['1:parent=0,join=$xor'],
+        filter: 'status:$g:1:$eq:active',
+        group: ['1:parent:0,join:$xor'],
       }),
     ).toThrow();
   });
@@ -746,7 +746,7 @@ describe('paginate', () => {
     expect(typeof coerced).toBe('number');
   });
 
-  it('does not include pagination.filters when no filter[*] is provided', () => {
+  it('does not include pagination.filters when no filter is provided', () => {
     const { queryParamsSchema } = makeLimitOffset();
 
     const parsed = queryParamsSchema().parse({
@@ -762,18 +762,18 @@ describe('paginate', () => {
     expect(parsed.pagination.filters).toBeUndefined();
   });
 
-  it('rejects group without any filter[*]', () => {
+  it('rejects group without any filter', () => {
     const { queryParamsSchema } = makeLimitOffset();
 
     expect(() =>
       queryParamsSchema().parse({
-        // no filter[*]
-        group: ['1:parent=0,join=$and'],
+        // no filter
+        group: ['1:parent:0,join:$and'],
       }),
     ).toThrow();
   });
 
-  it('CURSOR: does not include pagination.filters when no filter[*] is provided', () => {
+  it('CURSOR: does not include pagination.filters when no filter is provided', () => {
     const { queryParamsSchema } = makeCursor();
 
     const parsed = queryParamsSchema().parse({
@@ -1414,7 +1414,7 @@ describe('paginate edge cases', () => {
     const { queryParamsSchema } = makeLimitOffset();
 
     const parsed = queryParamsSchema().parse({
-      'filter[status]': 'active',
+      filter: 'status:active',
       limit: '10',
     });
     expect(parsed.pagination.filters).toBeDefined();
@@ -1426,7 +1426,7 @@ describe('paginate edge cases', () => {
     const { queryParamsSchema } = makeLimitOffset();
 
     const result = queryParamsSchema().safeParse({
-      'filter[id]': '$ilike:test',
+      filter: 'id:$ilike:test',
       limit: '10',
     });
     expect(result.success).toBe(false);
@@ -1438,7 +1438,7 @@ describe('paginate edge cases', () => {
     const { queryParamsSchema } = makeLimitOffset();
 
     const result = queryParamsSchema().safeParse({
-      'filter[id]': '$sw:test',
+      filter: 'id:$sw:test',
       limit: '10',
     });
     expect(result.success).toBe(false);
@@ -1462,7 +1462,7 @@ describe('paginate edge cases', () => {
     // $btw calls parseNumOrDateStrict which throws for non-numeric/non-date values
     expect(() =>
       p.queryParamsSchema().parse({
-        'filter[id]': '$btw:a,z',
+        filter: 'id:$btw:a,z',
         limit: '10',
       }),
     ).toThrow();
@@ -1474,7 +1474,7 @@ describe('paginate edge cases', () => {
     const { queryParamsSchema } = makeLimitOffset();
 
     const parsed = queryParamsSchema().parse({
-      'filter[status]': '$eq:active',
+      filter: 'status:$eq:active',
       limit: '10',
     });
     expect(parsed.pagination.filters).toBeDefined();
@@ -1498,7 +1498,7 @@ describe('paginate edge cases', () => {
     // $gt calls parseNumOrDateStrict which throws for non-numeric/non-date values
     expect(() =>
       p.queryParamsSchema().parse({
-        'filter[id]': '$gt:abc',
+        filter: 'id:$gt:abc',
         limit: '10',
       }),
     ).toThrow();
@@ -1512,7 +1512,7 @@ describe('paginate edge cases', () => {
     // 'not-a-number' will be parsed as a string by parseSingleCondition ($eq accepts strings),
     // but validateConditionType checks the value type matches the field type
     const result = queryParamsSchema().safeParse({
-      'filter[id]': '$eq:not-a-number',
+      filter: 'id:$eq:not-a-number',
       limit: '10',
     });
     expect(result.success).toBe(false);
@@ -1524,7 +1524,7 @@ describe('paginate edge cases', () => {
     const { queryParamsSchema } = makeLimitOffset();
 
     const result = queryParamsSchema().safeParse({
-      'filter[createdAt]': '$eq:not-a-date',
+      filter: 'createdAt:$eq:not-a-date',
       limit: '10',
     });
     expect(result.success).toBe(false);
@@ -1538,7 +1538,7 @@ describe('paginate edge cases', () => {
     // parseNumOrDateStrict throws for 'abc'
     expect(() =>
       queryParamsSchema().parse({
-        'filter[id]': '$gt:abc',
+        filter: 'id:$gt:abc',
         limit: '10',
       }),
     ).toThrow();
@@ -1552,7 +1552,7 @@ describe('paginate edge cases', () => {
     // parseNumOrDateStrict throws for non-date values
     expect(() =>
       queryParamsSchema().parse({
-        'filter[createdAt]': '$gt:not-a-date',
+        filter: 'createdAt:$gt:not-a-date',
         limit: '10',
       }),
     ).toThrow();
@@ -1576,7 +1576,7 @@ describe('paginate edge cases', () => {
     // $btw calls parseNumOrDateStrict which throws for 'abc,def'
     expect(() =>
       p.queryParamsSchema().parse({
-        'filter[id]': '$btw:abc,def',
+        filter: 'id:$btw:abc,def',
         limit: '10',
       }),
     ).toThrow();
@@ -1590,7 +1590,7 @@ describe('paginate edge cases', () => {
     // 'abc,def' fails parseNumOrDateStrict → throws during DSL parsing
     expect(() =>
       queryParamsSchema().parse({
-        'filter[createdAt]': '$btw:abc,def',
+        filter: 'createdAt:$btw:abc,def',
         limit: '10',
       }),
     ).toThrow();
@@ -1603,7 +1603,7 @@ describe('paginate edge cases', () => {
 
     expect(() =>
       queryParamsSchema().parse({
-        'filter[id]': '$btw:10,2025-01-01',
+        filter: 'id:$btw:10,2025-01-01',
         limit: '10',
       }),
     ).toThrow();
@@ -1615,7 +1615,7 @@ describe('paginate edge cases', () => {
     const { queryParamsSchema } = makeLimitOffset();
 
     const parsed = queryParamsSchema().parse({
-      'filter[createdAt]': '$null',
+      filter: 'createdAt:$null',
       limit: '10',
     });
     expect(parsed.pagination.filters).toBeDefined();
@@ -1627,7 +1627,7 @@ describe('paginate edge cases', () => {
     const { queryParamsSchema } = makeLimitOffset();
 
     const parsed = queryParamsSchema().parse({
-      'filter[createdAt]': '$not:$null',
+      filter: 'createdAt:$not:$null',
       limit: '10',
     });
     expect(parsed.pagination.filters).toBeDefined();
@@ -1637,7 +1637,7 @@ describe('paginate edge cases', () => {
     const { queryParamsSchema } = makeLimitOffset();
 
     const parsed = queryParamsSchema().parse({
-      'filter[status]': '$not:$eq:active',
+      filter: 'status:$not:$eq:active',
       limit: '10',
     });
     expect(parsed.pagination.filters).toBeDefined();
@@ -1659,7 +1659,7 @@ describe('paginate edge cases', () => {
     });
 
     const parsed = p.queryParamsSchema().parse({
-      'filter[status]': '$contains:a,b,c',
+      filter: 'status:$contains:a,b,c',
       limit: '10',
     });
     expect(parsed.pagination.filters).toBeDefined();
@@ -1672,7 +1672,7 @@ describe('paginate edge cases', () => {
 
     expect(() =>
       queryParamsSchema().parse({
-        'filter[status]': '$g:1',
+        filter: 'status:$g:1',
         limit: '10',
       }),
     ).toThrow();
@@ -1685,7 +1685,7 @@ describe('paginate edge cases', () => {
 
     expect(() =>
       queryParamsSchema().parse({
-        'filter[status]': '$g:1:$and',
+        filter: 'status:$g:1:$and',
         limit: '10',
       }),
     ).toThrow();
@@ -1698,7 +1698,7 @@ describe('paginate edge cases', () => {
 
     expect(() =>
       queryParamsSchema().parse({
-        'filter[status]': '$not',
+        filter: 'status:$not',
         limit: '10',
       }),
     ).toThrow();
@@ -1711,8 +1711,8 @@ describe('paginate edge cases', () => {
 
     expect(() =>
       queryParamsSchema().parse({
-        'filter[status]': '$g:1:$eq:active',
-        group: ['0:join=$and', '1:parent=0'],
+        filter: 'status:$g:1:$eq:active',
+        group: ['0:join:$and', '1:parent:0'],
         limit: '10',
       }),
     ).toThrow();
@@ -1724,7 +1724,7 @@ describe('paginate edge cases', () => {
     const { queryParamsSchema } = makeLimitOffset();
 
     const result = queryParamsSchema().safeParse({
-      group: ['1:parent=0,join=$and'],
+      group: ['1:parent:0,join:$and'],
       limit: '10',
     });
     expect(result.success).toBe(false);
@@ -1737,7 +1737,7 @@ describe('paginate edge cases', () => {
 
     // entry without colon should be silently ignored
     const parsed = queryParamsSchema().parse({
-      'filter[status]': '$eq:active',
+      filter: 'status:$eq:active',
       group: ['badentry'],
       limit: '10',
     });
@@ -1914,7 +1914,7 @@ describe('paginate edge cases', () => {
     const { queryParamsSchema } = makeLimitOffset();
 
     const result = queryParamsSchema().safeParse({
-      'filter[createdAt]': '$eq:9999-99-99',
+      filter: 'createdAt:$eq:9999-99-99',
       limit: '10',
     });
     expect(result.success).toBe(false);
@@ -1937,21 +1937,21 @@ describe('paginate edge cases', () => {
 
     // $eq with number
     const parsed = p.queryParamsSchema().parse({
-      'filter[id]': '$eq:42',
+      filter: 'id:$eq:42',
       limit: '10',
     });
     expect(parsed.pagination.filters).toBeDefined();
 
     // $gt with number
     const parsed2 = p.queryParamsSchema().parse({
-      'filter[id]': '$gt:10',
+      filter: 'id:$gt:10',
       limit: '10',
     });
     expect(parsed2.pagination.filters).toBeDefined();
 
     // $btw with numbers
     const parsed3 = p.queryParamsSchema().parse({
-      'filter[id]': '$btw:1,100',
+      filter: 'id:$btw:1,100',
       limit: '10',
     });
     expect(parsed3.pagination.filters).toBeDefined();

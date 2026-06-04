@@ -106,7 +106,7 @@ const parsed = queryParamsSchema().parse({
   page: "2",
   sortBy: "createdAt:DESC",
   select: "id,status",
-  "filter[status]": "$ilike:act",
+  filter: "status:$ilike:act",
 });
 
 console.log(parsed.pagination);
@@ -426,23 +426,23 @@ contextSchema.parse({
 
 ## Filters
 
-Filters use query keys with bracket notation `filter[<field>]=<dsl>` where `<field>` is a dot-path (e.g. `meta.score`). Configure which fields and operators are allowed via the `filterable` option.
+Filters use a repeated `filter` query parameter with the format `field:$op:value`. Configure which fields and operators are allowed via the `filterable` option.
 
 ### Operators
 
 | Operator | Meaning | Value format | Example |
 |---|---|---|---|
-| `$eq` | equals | number / string / ISO date | `filter[status]=$eq:active` |
-| `$null` | is null | _(no value)_ | `filter[deletedAt]=$null` |
-| `$in` | in list | comma-separated | `filter[status]=$in:active,pending` |
-| `$contains` | contains values | comma-separated | `filter[tags]=$contains:typescript,zod` |
-| `$gt` | greater than | number or ISO date | `filter[id]=$gt:100` |
-| `$gte` | greater than or equal | number or ISO date | `filter[createdAt]=$gte:2025-01-01` |
-| `$lt` | less than | number or ISO date | `filter[id]=$lt:500` |
-| `$lte` | less than or equal | number or ISO date | `filter[id]=$lte:500` |
-| `$btw` | between (inclusive) | `a,b` (same type) | `filter[id]=$btw:10,100` |
-| `$ilike` | case-insensitive contains | string | `filter[name]=$ilike:john` |
-| `$sw` | starts with | string | `filter[name]=$sw:Jon` |
+| `$eq` | equals | number / string / ISO date | `filter=status:$eq:active` |
+| `$null` | is null | _(no value)_ | `filter=deletedAt:$null` |
+| `$in` | in list | comma-separated | `filter=status:$in:active,pending` |
+| `$contains` | contains values | comma-separated | `filter=tags:$contains:typescript,zod` |
+| `$gt` | greater than | number or ISO date | `filter=id:$gt:100` |
+| `$gte` | greater than or equal | number or ISO date | `filter=createdAt:$gte:2025-01-01` |
+| `$lt` | less than | number or ISO date | `filter=id:$lt:500` |
+| `$lte` | less than or equal | number or ISO date | `filter=id:$lte:500` |
+| `$btw` | between (inclusive) | `a,b` (same type) | `filter=id:$btw:10,100` |
+| `$ilike` | case-insensitive contains | string | `filter=name:$ilike:john` |
+| `$sw` | starts with | string | `filter=name:$sw:Jon` |
 
 If the filter value does **not** start with `$`, it is interpreted as `$eq:<value>`.
 
@@ -451,20 +451,20 @@ If the filter value does **not** start with `$`, it is interpreted as `$eq:<valu
 Prefix any operator with `$not:` to negate the condition:
 
 ```txt
-filter[deletedAt]=$not:$null
-filter[status]=$not:$eq:active
+filter=deletedAt:$not:$null
+filter=status:$not:$eq:active
 ```
 
 ### Multiple conditions for the same field
 
-Repeat the same query param key to pass multiple conditions:
+Repeat the `filter` param:
 
 ```txt
-filter[id]=$gt:10&filter[id]=$lt:100
+?filter=id:$gt:10&filter=id:$lt:100
 ```
 
 ```ts
-{ "filter[id]": ["$gt:10", "$lt:100"] }
+{ filter: ["id:$gt:10", "id:$lt:100"] }
 ```
 
 Runtime validation enforces: field allowlist (`filterable`), operator allowlist per field (`ops`), and value type compatibility.
@@ -478,14 +478,14 @@ Groups let you build nested AND/OR boolean logic.
 Prefix any filter DSL with `$g:<groupId>:`:
 
 ```txt
-filter[status]=$g:1:$eq:active
+filter=status:$g:1:$eq:active
 ```
 
 Within a group, the **first** condition cannot have `$and`/`$or`. Following conditions may be prefixed with `$and` or `$or`.
 
 ### Group tree definitions: `group`
 
-Define parent-child relationships between groups using the repeated `group` query parameter. Each entry has the format `id:key=value,key=value`.
+Define parent-child relationships between groups using the repeated `group` query parameter. Each entry has the format `id:key:value,key:value`.
 
 Available keys:
 
@@ -498,15 +498,14 @@ Rules: root group id is always `"0"`. `parent` and `join` are forbidden on group
 **Example:** `(status == active OR status == postponed) AND (id > 10)`
 
 ```txt
-?filter[status]=$g:1:$eq:active&filter[status]=$g:1:$or:$eq:postponed&filter[id]=$g:2:$gt:10&group=1:parent=0&group=2:parent=0,join=$and
+?filter=status:$g:1:$eq:active&filter=status:$g:1:$or:$eq:postponed&filter=id:$g:2:$gt:10&group=1:parent:0&group=2:parent:0,join:$and
 ```
 
 ```ts
 const parsed = queryParamsSchema().parse({
-  "filter[status]": ["$g:1:$eq:active", "$g:1:$or:$eq:postponed"],
-  "filter[id]": "$g:2:$gt:10",
+  filter: ["status:$g:1:$eq:active", "status:$g:1:$or:$eq:postponed", "id:$g:2:$gt:10"],
 
-  group: ["1:parent=0", "2:parent=0,join=$and"],
+  group: ["1:parent:0", "2:parent:0,join:$and"],
 });
 
 // parsed.pagination.filters
@@ -759,7 +758,7 @@ Extra fields are validated together — errors from both sides are collected in 
 ### LIMIT/OFFSET
 
 ```txt
-?limit=20&page=1&select=id,status,createdAt&sortBy=createdAt:DESC&filter[status]=$ilike:act&filter[id]=$gt:10
+?limit=20&page=1&select=id,status,createdAt&sortBy=createdAt:DESC&filter=status:$ilike:act&filter=id:$gt:10
 ```
 
 ```ts
@@ -768,8 +767,7 @@ const parsed = queryParamsSchema().parse({
   page: "1",
   select: "id,status,createdAt",
   sortBy: "createdAt:DESC",
-  "filter[status]": "$ilike:act",
-  "filter[id]": "$gt:10",
+  filter: ["status:$ilike:act", "id:$gt:10"],
 });
 
 // parsed.pagination
