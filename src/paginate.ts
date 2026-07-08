@@ -1479,6 +1479,10 @@ export function paginate<
       .meta({
         description: `Filter conditions. Format: "field:$op:value". Repeat for multiple conditions.\nAvailable fields:\n${filterFields}`,
         example: `${Object.keys(filterable)[0]}:${Object.values(filterable)[0]?.ops[0]}:value`,
+        param: {
+          style: 'form',
+          explode: true,
+        },
       });
 
     rootShape.group = z
@@ -1488,6 +1492,10 @@ export function paginate<
         description:
           'Group definitions for complex filter logic. Format: "id:key:value,key:value". Keys: parent, join ($and/$or), op ($and/$or)',
         example: '1:parent:0,join:$and',
+        param: {
+          style: 'form',
+          explode: true,
+        },
       });
   }
 
