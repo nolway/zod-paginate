@@ -1,5 +1,17 @@
 # Changelog
 
+## [2.0.3](https://github.com/nolway/zod-paginate/compare/v2.0.2...v2.0.3) (2026-07-08)
+
+
+### Bug Fixes
+
+* add explode to handle multi filter ([3aa2e12](https://github.com/nolway/zod-paginate/commit/3aa2e1265868485c5d0052eff58df31131b3cbf4))
+
+
+### Miscellaneous Chores
+
+* release 2.0.3 ([e55853a](https://github.com/nolway/zod-paginate/commit/e55853ac1a96c1379de990fa770766ed05f534aa))
+
 ## [2.0.2](https://github.com/nolway/zod-paginate/compare/v2.0.1...v2.0.2) (2026-06-04)
 
 
