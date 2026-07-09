@@ -1432,19 +1432,21 @@ export function paginate<
         ? config.defaultSortBy.map((s) => `${s.property}:${s.direction}`).join(',')
         : 'none';
     rootShape.sortBy = z
-      .preprocess((value) => {
-        if (value === undefined) return undefined;
-        return Array.isArray(value) ? value : [value];
-      }, z.array(z.string()))
-      .optional()
-      .meta({
-        description: `Sort by field and direction. Format: "field:ASC" or "field:DESC". Repeat for multiple conditions. Allowed fields: ${config.sortable.join(', ')}. Default: ${defaultSortDesc}`,
-        example: config.sortable[0] ? `${config.sortable[0]}:ASC` : undefined,
-        param: {
-          style: 'form',
-          explode: true,
+      .preprocess(
+        (value) => {
+          if (value === undefined) return undefined;
+          return Array.isArray(value) ? value : [value];
         },
-      });
+        z.array(z.string()).meta({
+          description: `Sort by field and direction. Format: "field:ASC" or "field:DESC". Repeat for multiple conditions. Allowed fields: ${config.sortable.join(', ')}. Default: ${defaultSortDesc}`,
+          example: config.sortable[0] ? `${config.sortable[0]}:ASC` : undefined,
+          param: {
+            style: 'form',
+            explode: true,
+          },
+        }),
+      )
+      .optional();
   }
 
   if (config.selectable.length > 0) {
@@ -1466,35 +1468,39 @@ export function paginate<
       .join('\n');
 
     rootShape.filter = z
-      .preprocess((value) => {
-        if (value === undefined) return undefined;
-        return Array.isArray(value) ? value : [value];
-      }, z.array(z.string()))
-      .optional()
-      .meta({
-        description: `Filter conditions. Format: "field:$op:value". Repeat for multiple conditions.\nAvailable fields:\n${filterFields}`,
-        example: `${Object.keys(filterable)[0]}:${Object.values(filterable)[0]?.ops[0]}:value`,
-        param: {
-          style: 'form',
-          explode: true,
+      .preprocess(
+        (value) => {
+          if (value === undefined) return undefined;
+          return Array.isArray(value) ? value : [value];
         },
-      });
+        z.array(z.string()).meta({
+          description: `Filter conditions. Format: "field:$op:value". Repeat for multiple conditions.\nAvailable fields:\n${filterFields}`,
+          example: `${Object.keys(filterable)[0]}:${Object.values(filterable)[0]?.ops[0]}:value`,
+          param: {
+            style: 'form',
+            explode: true,
+          },
+        }),
+      )
+      .optional();
 
     rootShape.group = z
-      .preprocess((value) => {
-        if (value === undefined) return undefined;
-        return Array.isArray(value) ? value : [value];
-      }, z.array(z.string()))
-      .optional()
-      .meta({
-        description:
-          'Group definitions for complex filter logic. Format: "id:key:value,key:value". Keys: parent, join ($and/$or), op ($and/$or)',
-        example: '1:parent:0,join:$and',
-        param: {
-          style: 'form',
-          explode: true,
+      .preprocess(
+        (value) => {
+          if (value === undefined) return undefined;
+          return Array.isArray(value) ? value : [value];
         },
-      });
+        z.array(z.string()).meta({
+          description:
+            'Group definitions for complex filter logic. Format: "id:key:value,key:value". Keys: parent, join ($and/$or), op ($and/$or)',
+          example: '1:parent:0,join:$and',
+          param: {
+            style: 'form',
+            explode: true,
+          },
+        }),
+      )
+      .optional();
   }
 
   const baseQueryParamsSchema: z.ZodType<PaginationQueryParams<TSchema>> = z
