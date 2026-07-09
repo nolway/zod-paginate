@@ -285,16 +285,8 @@ function extractGroupDefs(q: Record<string, unknown>): GroupDefs {
   const defs: GroupDefs = {};
 
   const raw = q.group;
-  if (raw === undefined || raw === null) return defs;
-
-  let entries: string[];
-  if (Array.isArray(raw)) {
-    entries = raw.filter((x): x is string => typeof x === 'string');
-  } else if (typeof raw === 'string') {
-    entries = [raw];
-  } else {
-    entries = [];
-  }
+  if (!Array.isArray(raw)) return defs;
+  const entries: string[] = raw.filter((x): x is string => typeof x === 'string');
 
   for (const entry of entries) {
     // Format: "id:key:value,key:value"
@@ -611,16 +603,8 @@ function extractAndNormalizeRawFilters(q: Record<string, unknown>): Record<strin
   const result: Record<string, Condition[]> = {};
 
   const raw = q.filter;
-  if (raw === undefined || raw === null) return result;
-
-  let entries: string[];
-  if (Array.isArray(raw)) {
-    entries = raw.filter((x): x is string => typeof x === 'string');
-  } else if (typeof raw === 'string') {
-    entries = [raw];
-  } else {
-    entries = [];
-  }
+  if (!Array.isArray(raw)) return result;
+  const entries: string[] = raw.filter((x): x is string => typeof x === 'string');
 
   for (const entry of entries) {
     // Format: "field:$op:value" — first colon separates field from DSL
@@ -1474,8 +1458,10 @@ export function paginate<
       .join('\n');
 
     rootShape.filter = z
-      .union([z.string(), z.array(z.string())])
-      .optional()
+      .preprocess((value) => {
+        if (value === undefined) return undefined;
+        return Array.isArray(value) ? value : [value];
+      }, z.array(z.string()).optional())
       .meta({
         description: `Filter conditions. Format: "field:$op:value". Repeat for multiple conditions.\nAvailable fields:\n${filterFields}`,
         example: `${Object.keys(filterable)[0]}:${Object.values(filterable)[0]?.ops[0]}:value`,
@@ -1486,8 +1472,10 @@ export function paginate<
       });
 
     rootShape.group = z
-      .union([z.string(), z.array(z.string())])
-      .optional()
+      .preprocess((value) => {
+        if (value === undefined) return undefined;
+        return Array.isArray(value) ? value : [value];
+      }, z.array(z.string()).optional())
       .meta({
         description:
           'Group definitions for complex filter logic. Format: "id:key:value,key:value". Keys: parent, join ($and/$or), op ($and/$or)',

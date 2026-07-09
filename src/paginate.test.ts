@@ -1979,3 +1979,265 @@ describe('paginate edge cases', () => {
     expect(parsed.pagination.cursor).toBe(42);
   });
 });
+
+describe('filter and group preprocess normalization', () => {
+  function setup(): PaginateResult<typeof ModelSchema> {
+    return paginate({
+      paginationType: 'LIMIT_OFFSET',
+      dataSchema: ModelSchema,
+      selectable: ['id', 'status', 'createdAt', 'meta.score'],
+      sortable: ['createdAt', 'id'],
+      filterable: {
+        status: { type: 'string', ops: ['$eq', '$ilike', '$in'] },
+        createdAt: { type: 'date', ops: ['$btw', '$null', '$gt', '$lte'] },
+        id: { type: 'number', ops: ['$gt', '$lt', '$gte', '$lte', '$in', '$eq', '$btw'] },
+        'meta.score': { type: 'number', ops: ['$gte', '$lte'] },
+      },
+      defaultLimit: 20,
+      maxLimit: 100,
+      defaultSelect: '*',
+    });
+  }
+
+  it('filter as single string is normalized to array', () => {
+    const { queryParamsSchema } = setup();
+    const parsed = queryParamsSchema().parse({
+      filter: 'status:$eq:active',
+    });
+
+    expect(parsed.pagination.filters).toBeTruthy();
+    expect(parsed.pagination.filters?.type).toBe('filter');
+    if (parsed.pagination.filters?.type === 'filter') {
+      expect(parsed.pagination.filters.field).toBe('status');
+      expect(parsed.pagination.filters.condition.op).toBe('$eq');
+      if (parsed.pagination.filters.condition.op === '$eq') {
+        expect(parsed.pagination.filters.condition.value).toBe('active');
+      }
+    }
+  });
+
+  it('filter as array with single entry works', () => {
+    const { queryParamsSchema } = setup();
+    const parsed = queryParamsSchema().parse({
+      filter: ['id:$gt:5'],
+    });
+
+    expect(parsed.pagination.filters).toBeTruthy();
+    if (parsed.pagination.filters?.type === 'filter') {
+      expect(parsed.pagination.filters.field).toBe('id');
+      expect(parsed.pagination.filters.condition.op).toBe('$gt');
+      if (parsed.pagination.filters.condition.op === '$gt') {
+        expect(parsed.pagination.filters.condition.value).toBe(5);
+      }
+    }
+  });
+
+  it('filter as array with multiple entries produces AND by default', () => {
+    const { queryParamsSchema } = setup();
+    const parsed = queryParamsSchema().parse({
+      filter: ['id:$gt:5', 'id:$lt:100'],
+    });
+
+    expect(parsed.pagination.filters?.type).toBe('and');
+    if (parsed.pagination.filters?.type === 'and') {
+      expect(parsed.pagination.filters.items).toHaveLength(2);
+    }
+  });
+
+  it('filter undefined produces no filters', () => {
+    const { queryParamsSchema } = setup();
+    const parsed = queryParamsSchema().parse({});
+
+    expect(parsed.pagination.filters).toBeUndefined();
+  });
+
+  it('group as single string is normalized to array', () => {
+    const { queryParamsSchema } = setup();
+    const parsed = queryParamsSchema().parse({
+      filter: ['status:$g:1:$eq:active', 'id:$g:2:$gt:10'],
+      group: '1:parent:0',
+    });
+
+    expect(parsed.pagination.filters).toBeTruthy();
+  });
+
+  it('group as array works', () => {
+    const { queryParamsSchema } = setup();
+    const parsed = queryParamsSchema().parse({
+      filter: ['status:$g:1:$eq:active', 'id:$g:2:$gt:10'],
+      group: ['1:parent:0', '2:parent:0,join:$and'],
+    });
+
+    expect(parsed.pagination.filters?.type).toBe('and');
+  });
+
+  it('group undefined with filters defaults to root group', () => {
+    const { queryParamsSchema } = setup();
+    const parsed = queryParamsSchema().parse({
+      filter: ['status:$eq:active', 'id:$gt:5'],
+    });
+
+    expect(parsed.pagination.filters?.type).toBe('and');
+  });
+
+  it('multiple filters on same field with $or combinator', () => {
+    const { queryParamsSchema } = setup();
+    const parsed = queryParamsSchema().parse({
+      filter: ['status:$eq:active', 'status:$or:$eq:inactive'],
+    });
+
+    expect(parsed.pagination.filters?.type).toBe('or');
+    if (parsed.pagination.filters?.type === 'or') {
+      expect(parsed.pagination.filters.items).toHaveLength(2);
+    }
+  });
+
+  it('$in operator with multiple values', () => {
+    const { queryParamsSchema } = setup();
+    const parsed = queryParamsSchema().parse({
+      filter: 'status:$in:active,pending,failed',
+    });
+
+    expect(parsed.pagination.filters?.type).toBe('filter');
+    if (parsed.pagination.filters?.type === 'filter') {
+      expect(parsed.pagination.filters.condition.op).toBe('$in');
+      if (parsed.pagination.filters.condition.op === '$in') {
+        expect(parsed.pagination.filters.condition.value).toEqual(['active', 'pending', 'failed']);
+      }
+    }
+  });
+
+  it('nested field path in filter', () => {
+    const { queryParamsSchema } = setup();
+    const parsed = queryParamsSchema().parse({
+      filter: 'meta.score:$gte:80',
+    });
+
+    expect(parsed.pagination.filters?.type).toBe('filter');
+    if (parsed.pagination.filters?.type === 'filter') {
+      expect(parsed.pagination.filters.field).toBe('meta.score');
+      expect(parsed.pagination.filters.condition.op).toBe('$gte');
+      if (parsed.pagination.filters.condition.op === '$gte') {
+        expect(parsed.pagination.filters.condition.value).toBe(80);
+      }
+    }
+  });
+
+  it('$btw operator with number range', () => {
+    const { queryParamsSchema } = setup();
+    const parsed = queryParamsSchema().parse({
+      filter: 'id:$btw:10,50',
+    });
+
+    if (parsed.pagination.filters?.type === 'filter') {
+      expect(parsed.pagination.filters.condition.op).toBe('$btw');
+      if (parsed.pagination.filters.condition.op === '$btw') {
+        expect(parsed.pagination.filters.condition.value).toEqual([10, 50]);
+      }
+    }
+  });
+
+  it('$not negation with preprocess', () => {
+    const { queryParamsSchema } = setup();
+    const parsed = queryParamsSchema().parse({
+      filter: 'status:$not:$eq:active',
+    });
+
+    if (parsed.pagination.filters?.type === 'filter') {
+      expect(parsed.pagination.filters.condition.op).toBe('$eq');
+      expect(parsed.pagination.filters.condition.not).toBe(true);
+      if (parsed.pagination.filters.condition.op === '$eq') {
+        expect(parsed.pagination.filters.condition.value).toBe('active');
+      }
+    }
+  });
+
+  it('complex scenario: multiple filters + groups from single strings', () => {
+    const { queryParamsSchema } = setup();
+    const parsed = queryParamsSchema().parse({
+      filter: [
+        'status:$g:1:$eq:active',
+        'status:$g:1:$or:$eq:pending',
+        'id:$g:2:$gte:100',
+        'id:$g:2:$and:$lte:500',
+      ],
+      group: ['1:parent:0', '2:parent:0,join:$and'],
+    });
+
+    expect(parsed.pagination.filters?.type).toBe('and');
+    if (parsed.pagination.filters?.type === 'and') {
+      expect(parsed.pagination.filters.items).toHaveLength(2);
+      // Group 1: status OR
+      expect(parsed.pagination.filters.items[0]?.type).toBe('or');
+      // Group 2: id AND
+      expect(parsed.pagination.filters.items[1]?.type).toBe('and');
+    }
+  });
+
+  it('implicit $eq when no operator prefix', () => {
+    const { queryParamsSchema } = setup();
+    const parsed = queryParamsSchema().parse({
+      filter: 'status:active',
+    });
+
+    if (parsed.pagination.filters?.type === 'filter') {
+      expect(parsed.pagination.filters.condition.op).toBe('$eq');
+      if (parsed.pagination.filters.condition.op === '$eq') {
+        expect(parsed.pagination.filters.condition.value).toBe('active');
+      }
+    }
+  });
+
+  it('filter with $ilike operator', () => {
+    const { queryParamsSchema } = setup();
+    const parsed = queryParamsSchema().parse({
+      filter: 'status:$ilike:act',
+    });
+
+    if (parsed.pagination.filters?.type === 'filter') {
+      expect(parsed.pagination.filters.condition.op).toBe('$ilike');
+      if (parsed.pagination.filters.condition.op === '$ilike') {
+        expect(parsed.pagination.filters.condition.value).toBe('act');
+      }
+    }
+  });
+
+  it('filter with date $gt operator', () => {
+    const { queryParamsSchema } = setup();
+    const parsed = queryParamsSchema().parse({
+      filter: 'createdAt:$gt:2024-01-01',
+    });
+
+    if (parsed.pagination.filters?.type === 'filter') {
+      expect(parsed.pagination.filters.condition.op).toBe('$gt');
+      if (parsed.pagination.filters.condition.op === '$gt') {
+        expect(parsed.pagination.filters.condition.value).toBe('2024-01-01');
+      }
+    }
+  });
+
+  it('rejects filter entry without colon separator', () => {
+    const { queryParamsSchema } = setup();
+    // "statusactive" has no colon — should be silently ignored (no field:dsl split)
+    const parsed = queryParamsSchema().parse({
+      filter: ['statusactive', 'id:$gt:5'],
+    });
+
+    // Only id filter should be parsed
+    expect(parsed.pagination.filters?.type).toBe('filter');
+    if (parsed.pagination.filters?.type === 'filter') {
+      expect(parsed.pagination.filters.field).toBe('id');
+    }
+  });
+
+  it('rejects group entry without colon separator', () => {
+    const { queryParamsSchema } = setup();
+    const parsed = queryParamsSchema().parse({
+      filter: ['status:$g:1:$eq:active', 'id:$g:2:$gt:10'],
+      group: ['badentry', '1:parent:0'],
+    });
+
+    // Should still work with the valid group entry
+    expect(parsed.pagination.filters).toBeTruthy();
+  });
+});
