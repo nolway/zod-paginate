@@ -1,5 +1,17 @@
 # Changelog
 
+## [2.0.7](https://github.com/nolway/zod-paginate/compare/v2.0.6...v2.0.7) (2026-07-09)
+
+
+### Bug Fixes
+
+* move documented form ([48a008d](https://github.com/nolway/zod-paginate/commit/48a008d03b7630ecfe283c09ad7ba3588363dab3))
+
+
+### Miscellaneous Chores
+
+* release 2.0.7 ([8453b7c](https://github.com/nolway/zod-paginate/commit/8453b7c8d55dc7caea55b55de4d86ec857a8b48f))
+
 ## [2.0.6](https://github.com/nolway/zod-paginate/compare/v2.0.5...v2.0.6) (2026-07-09)
 
 
