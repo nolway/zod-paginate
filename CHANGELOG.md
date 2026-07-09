@@ -1,5 +1,17 @@
 # Changelog
 
+## [2.0.4](https://github.com/nolway/zod-paginate/compare/v2.0.3...v2.0.4) (2026-07-09)
+
+
+### Bug Fixes
+
+* filter array ([10b53ec](https://github.com/nolway/zod-paginate/commit/10b53ec75a47dbac41a9f31afbfd7ed71d351956))
+
+
+### Miscellaneous Chores
+
+* release 2.0.4 ([e5a543e](https://github.com/nolway/zod-paginate/commit/e5a543e2e35e258e1a85d93b119e31a767055c6b))
+
 ## [2.0.3](https://github.com/nolway/zod-paginate/compare/v2.0.2...v2.0.3) (2026-07-08)
 
 
