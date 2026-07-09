@@ -1,5 +1,17 @@
 # Changelog
 
+## [2.0.5](https://github.com/nolway/zod-paginate/compare/v2.0.4...v2.0.5) (2026-07-09)
+
+
+### Bug Fixes
+
+* allow multi query values ([9575231](https://github.com/nolway/zod-paginate/commit/9575231f6d6bf8101cd1c408b32b8ecf7dcc1ba4))
+
+
+### Miscellaneous Chores
+
+* release 2.0.5 ([f07d1a8](https://github.com/nolway/zod-paginate/commit/f07d1a8df3592011e1e22e3599a563e42a3b8cc1))
+
 ## [2.0.4](https://github.com/nolway/zod-paginate/compare/v2.0.3...v2.0.4) (2026-07-09)
 
 
