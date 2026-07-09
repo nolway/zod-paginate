@@ -1,5 +1,17 @@
 # Changelog
 
+## [2.0.6](https://github.com/nolway/zod-paginate/compare/v2.0.5...v2.0.6) (2026-07-09)
+
+
+### Bug Fixes
+
+* move documented groups to expose explode and form ([09baf29](https://github.com/nolway/zod-paginate/commit/09baf293e6cf59ab62046e20acb4f87bc4c6007f))
+
+
+### Miscellaneous Chores
+
+* release 2.0.6 ([00ac02c](https://github.com/nolway/zod-paginate/commit/00ac02ca5ff2fb0e5c32dd2eb2e998e6495ece19))
+
 ## [2.0.5](https://github.com/nolway/zod-paginate/compare/v2.0.4...v2.0.5) (2026-07-09)
 
 
