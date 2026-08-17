@@ -141,6 +141,7 @@ contextSchema.parse({
 - [Filter groups](#filter-groups)
 - [Discriminated unions](#discriminated-unions)
   - [Compile-time enforcement](#compile-time-enforcement-on-selectable) · [Runtime enforcement](#runtime-rejection-of-explicit-select-without-discriminator) · [Union-preserving validation](#union-preserving-response-validation)
+- [Decorative fields](#decorative-fields)
 - [Extending queryParamsSchema](#extending-queryparamsschema)
 - [End-to-end examples](#end-to-end-examples)
 - [TypeScript reference](#typescript-reference)
