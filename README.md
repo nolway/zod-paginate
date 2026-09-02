@@ -447,6 +447,17 @@ Filters use a repeated `filter` query parameter with the format `field:$op:value
 
 If the filter value does **not** start with `$`, it is interpreted as `$eq:<value>`.
 
+### Value output types
+
+When a field is configured with `type: "date"`, ISO date values (`$eq`, `$gt`, `$gte`, `$lt`, `$lte`, `$btw`) are **cast to `Date` objects** in the parsed output AST (`pagination.filters`). Numeric fields keep numbers, and non-date fields keep strings.
+
+```ts
+queryParamsSchema().parse({ filter: "createdAt:$gt:2024-01-01" });
+// pagination.filters.condition.value → Date(2024-01-01)  (not the string "2024-01-01")
+```
+
+> Note: the `filter` echoed back in the response metadata (`pagination.filter`) is a JSON-serializable `WhereNode` (dates as ISO strings); only the parsed query params expose real `Date` objects.
+
 ### Negation: `$not`
 
 Prefix any operator with `$not:` to negate the condition:

@@ -217,7 +217,22 @@ export const ConditionSchema = z
     description: 'A single filter condition with operator, optional negation, and value',
   });
 
-export type Condition = z.infer<typeof ConditionSchema>;
+type RawCondition = z.infer<typeof ConditionSchema>;
+
+type DateScalarOps = '$eq' | '$gt' | '$gte' | '$lt' | '$lte';
+
+/**
+ * Widen the value of date-capable conditions so the parsed output AST can hold
+ * real `Date` objects (see `coerceConditionDates`). The runtime `ConditionSchema`
+ * stays number/string so JSON Schema generation for response schemas keeps working.
+ */
+type WidenConditionDates<C> = C extends { op: DateScalarOps }
+  ? Omit<C, 'value'> & { value: number | string | Date }
+  : C extends { op: '$btw' }
+    ? Omit<C, 'value'> & { value: [number | string | Date, number | string | Date] }
+    : C;
+
+export type Condition = WidenConditionDates<RawCondition>;
 
 /* ---------------------------------- */
 /* Filters AST */
@@ -359,7 +374,38 @@ function validateGroupDefs(defs: GroupDefs): void {
   }
 }
 
-function buildGroupConditionExprs(rawFilters: Record<string, Condition[]>): Map<string, WhereNode> {
+/** Cast an ISO date string value to a `Date` object; leaves numbers and non-date strings untouched. */
+function isoValueToDate(value: number | string | Date): number | string | Date {
+  if (typeof value === 'string' && isISODateString(value)) return new Date(value);
+  return value;
+}
+
+/**
+ * For fields configured as `date`, cast ISO date string values to `Date` objects in the
+ * output AST. Only affects operators whose value can be an int or ISO date
+ * (`$eq`, `$gt`, `$gte`, `$lt`, `$lte`, `$btw`); numbers and other field types are untouched.
+ */
+function coerceConditionDates(cond: Condition, fieldType: FieldType): Condition {
+  if (fieldType !== 'date') return cond;
+
+  switch (cond.op) {
+    case '$eq':
+    case '$gt':
+    case '$gte':
+    case '$lt':
+    case '$lte':
+      return { ...cond, value: isoValueToDate(cond.value) };
+    case '$btw':
+      return { ...cond, value: [isoValueToDate(cond.value[0]), isoValueToDate(cond.value[1])] };
+    default:
+      return cond;
+  }
+}
+
+function buildGroupConditionExprs(
+  rawFilters: Record<string, Condition[]>,
+  fieldType?: (field: string) => FieldType,
+): Map<string, WhereNode> {
   const groupNodes = new Map<string, WhereFilter[]>();
 
   for (const [field, conditions] of Object.entries(rawFilters)) {
@@ -375,7 +421,8 @@ function buildGroupConditionExprs(rawFilters: Record<string, Condition[]>): Map<
         );
       }
 
-      list.push({ type: 'filter', field, condition: cond });
+      const condition = fieldType ? coerceConditionDates(cond, fieldType(field)) : cond;
+      list.push({ type: 'filter', field, condition });
       groupNodes.set(groupId, list);
     }
   }
@@ -400,8 +447,9 @@ function buildGroupConditionExprs(rawFilters: Record<string, Condition[]>): Map<
 function buildWhereAstWithGroups(
   rawFilters: Record<string, Condition[]>,
   groupDefs: GroupDefs,
+  fieldType?: (field: string) => FieldType,
 ): WhereNode {
-  const groupExprs = buildGroupConditionExprs(rawFilters);
+  const groupExprs = buildGroupConditionExprs(rawFilters, fieldType);
 
   const allGroupIds = new Set<string>();
   for (const id of groupExprs.keys()) allGroupIds.add(id);
@@ -1739,7 +1787,13 @@ export function paginate<
           const hasAnyFilter = Object.keys(val.rawFilters).length > 0;
 
           const maybeFilters = hasAnyFilter
-            ? { filters: buildWhereAstWithGroups(val.rawFilters, val.groupDefs) }
+            ? {
+                filters: buildWhereAstWithGroups(
+                  val.rawFilters,
+                  val.groupDefs,
+                  (f) => filterable[f]?.type ?? 'any',
+                ),
+              }
             : {};
 
           if (config.paginationType === 'LIMIT_OFFSET') {

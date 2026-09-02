@@ -293,6 +293,17 @@ describe('paginate', () => {
     });
 
     expect(parsed.pagination.filters).toBeTruthy();
+
+    if (parsed.pagination.filters?.type === 'filter') {
+      const { condition } = parsed.pagination.filters;
+      expect(condition.op).toBe('$btw');
+      if (condition.op === '$btw') {
+        expect(condition.value[0]).toBeInstanceOf(Date);
+        expect(condition.value[1]).toBeInstanceOf(Date);
+        expect(condition.value[0]).toEqual(new Date('2022-01-01'));
+        expect(condition.value[1]).toEqual(new Date('2022-01-10'));
+      }
+    }
   });
 
   it('supports $in for number fields (value is array of strings in DSL)', () => {
@@ -2211,7 +2222,8 @@ describe('filter and group preprocess normalization', () => {
     if (parsed.pagination.filters?.type === 'filter') {
       expect(parsed.pagination.filters.condition.op).toBe('$gt');
       if (parsed.pagination.filters.condition.op === '$gt') {
-        expect(parsed.pagination.filters.condition.value).toBe('2024-01-01');
+        expect(parsed.pagination.filters.condition.value).toBeInstanceOf(Date);
+        expect(parsed.pagination.filters.condition.value).toEqual(new Date('2024-01-01'));
       }
     }
   });
