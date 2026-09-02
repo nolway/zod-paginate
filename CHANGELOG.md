@@ -1,5 +1,17 @@
 # Changelog
 
+## [2.0.8](https://github.com/nolway/zod-paginate/compare/v2.0.7...v2.0.8) (2026-09-02)
+
+
+### Bug Fixes
+
+* cast filter to date ([bef90dd](https://github.com/nolway/zod-paginate/commit/bef90ddc357598320ca838bb090d44278aef690a))
+
+
+### Miscellaneous Chores
+
+* release 2.0.8 ([6f818b5](https://github.com/nolway/zod-paginate/commit/6f818b508ee7ea93fe2f0280b230cf3b4de207d6))
+
 ## [2.0.7](https://github.com/nolway/zod-paginate/compare/v2.0.6...v2.0.7) (2026-07-09)
 
 
