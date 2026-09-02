@@ -1,5 +1,17 @@
 # Changelog
 
+## [2.0.9](https://github.com/nolway/zod-paginate/compare/v2.0.8...v2.0.9) (2026-09-02)
+
+
+### Bug Fixes
+
+* use iso cast on zod validator ([9fbe5cc](https://github.com/nolway/zod-paginate/commit/9fbe5cca90ebe708a60c21f62177e05ae069c402))
+
+
+### Miscellaneous Chores
+
+* release 2.0.9 ([a25b4ac](https://github.com/nolway/zod-paginate/commit/a25b4ac70915ca291580066764a23b76f37738ad))
+
 ## [2.0.8](https://github.com/nolway/zod-paginate/compare/v2.0.7...v2.0.8) (2026-09-02)
 
 
