@@ -139,6 +139,14 @@ export const NumericStringSchema = z
   .regex(/^\d+$/, 'Must be a numeric string')
   .transform((s) => Number(s));
 
+/**
+ * Filter value that can be a number or an ISO date string.
+ *
+ * Kept strictly `number | string` so it stays representable in JSON Schema / OpenAPI.
+ * The parsed query AST (`pagination.filters`) may still hold real `Date` objects for
+ * `date`-typed fields (see `coerceConditionDates`); those are normalized back to ISO
+ * strings when re-validated through the response schema (see `filterResponseSchema`).
+ */
 export const NumOrDateSchema = z.union([z.number(), z.string()]);
 
 type FieldType = 'string' | 'number' | 'date' | 'any';
@@ -285,6 +293,45 @@ const WhereNodeSchema: z.ZodType<WhereNode> = z
     description:
       'Recursive filter AST node: a single filter condition, or an AND/OR group of nodes',
   });
+
+/**
+ * Deep-normalize a filter AST for response validation: any `Date` value produced
+ * by the parsed query AST (`coerceConditionDates`) is converted back to an ISO string,
+ * so the AST round-trips through `WhereNodeSchema` (which only accepts number/string)
+ * without breaking JSON Schema / OpenAPI generation.
+ */
+function normalizeFilterNodeDates(node: unknown): unknown {
+  if (typeof node !== 'object' || node === null) return node;
+
+  if ('items' in node && Array.isArray(node.items)) {
+    return { ...node, items: node.items.map(normalizeFilterNodeDates) };
+  }
+
+  if ('condition' in node && typeof node.condition === 'object' && node.condition !== null) {
+    const condition = node.condition;
+    if ('value' in condition) {
+      const value = condition.value;
+      let normalized: unknown = value;
+      if (Array.isArray(value)) {
+        normalized = value.map((v) => (v instanceof Date ? v.toISOString() : v));
+      } else if (value instanceof Date) {
+        normalized = value.toISOString();
+      }
+      return { ...node, condition: { ...condition, value: normalized } };
+    }
+  }
+
+  return node;
+}
+
+/**
+ * Response-side filter schema: tolerant of `Date` values (normalized to ISO strings)
+ * while still validating and serializing as a plain `WhereNode`.
+ */
+const WhereNodeResponseSchema: z.ZodType<WhereNode> = z.preprocess(
+  normalizeFilterNodeDates,
+  WhereNodeSchema,
+);
 
 /* ---------------------------------- */
 /* Group tree */
@@ -1843,7 +1890,7 @@ export function paginate<
     .optional()
     .meta({ description: 'Applied sort order' });
 
-  const filterResponseSchema = WhereNodeSchema.optional().meta({
+  const filterResponseSchema = WhereNodeResponseSchema.optional().meta({
     description: 'Applied filter AST',
   });
 

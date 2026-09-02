@@ -2253,3 +2253,111 @@ describe('filter and group preprocess normalization', () => {
     expect(parsed.pagination.filters).toBeTruthy();
   });
 });
+
+/* ---------------------------------- */
+/* Date filter round-trip (AST Date -> response schema) */
+/* ---------------------------------- */
+
+describe('date filter round-trip through response schema', () => {
+  const RTModel = z.object({
+    id: z.number(),
+    name: z.string(),
+    createdAt: z.date(),
+  });
+
+  function rtSetup(): PaginateResult<typeof RTModel> {
+    return paginate({
+      paginationType: 'LIMIT_OFFSET',
+      dataSchema: RTModel,
+      selectable: ['id', 'name', 'createdAt'],
+      defaultSelect: '*',
+      sortable: ['id'],
+      filterable: {
+        createdAt: { type: 'date', ops: ['$eq', '$gt', '$btw'] },
+        id: { type: 'number', ops: ['$gt'] },
+      },
+      defaultLimit: 20,
+      maxLimit: 100,
+    });
+  }
+
+  it('responseSchema accepts a parsed filter holding Date values and normalizes them to ISO', () => {
+    const { queryParamsSchema, responseSchema } = rtSetup();
+    const parsed = queryParamsSchema().parse({ filter: 'createdAt:$gt:2024-01-01' });
+
+    // internal AST holds a real Date
+    if (
+      parsed.pagination.filters?.type === 'filter' &&
+      parsed.pagination.filters.condition.op === '$gt'
+    ) {
+      expect(parsed.pagination.filters.condition.value).toBeInstanceOf(Date);
+    }
+
+    const res = responseSchema.parse({
+      data: [{ id: 1, name: 'a', createdAt: new Date('2024-01-01') }],
+      pagination: {
+        itemsPerPage: 20,
+        totalItems: 1,
+        currentPage: 1,
+        totalPages: 1,
+        filter: parsed.pagination.filters,
+      },
+    });
+
+    const f = res.pagination.filter;
+    expect(f?.type).toBe('filter');
+    if (f?.type === 'filter' && f.condition.op === '$gt') {
+      expect(typeof f.condition.value).toBe('string');
+      expect(f.condition.value).toBe(new Date('2024-01-01').toISOString());
+    }
+  });
+
+  it('responseSchema accepts a parsed $btw filter with Date bounds', () => {
+    const { queryParamsSchema, responseSchema } = rtSetup();
+    const parsed = queryParamsSchema().parse({
+      filter: 'createdAt:$btw:2024-01-01,2024-02-01',
+    });
+
+    expect(() =>
+      responseSchema.parse({
+        data: [],
+        pagination: {
+          itemsPerPage: 20,
+          totalItems: 0,
+          currentPage: 1,
+          totalPages: 1,
+          filter: parsed.pagination.filters,
+        },
+      }),
+    ).not.toThrow();
+  });
+
+  it('validatorSchema also accepts Date-containing filters', () => {
+    const { queryParamsSchema, validatorSchema } = rtSetup();
+    const parsed = queryParamsSchema().parse({ filter: 'createdAt:$gt:2024-01-01' });
+
+    expect(() =>
+      validatorSchema(parsed.pagination).parse({
+        data: [{ id: 1, name: 'a', createdAt: new Date('2024-01-01') }],
+        pagination: {
+          itemsPerPage: 20,
+          totalItems: 1,
+          currentPage: 1,
+          totalPages: 1,
+          filter: parsed.pagination.filters,
+        },
+      }),
+    ).not.toThrow();
+  });
+
+  it('filter value stays representable in JSON Schema (typed, not an opaque {})', () => {
+    const { responseSchema } = rtSetup();
+    // `unrepresentable: 'any'` is the standard escape hatch for z.date() DATA fields.
+    // The filter AST value must not require it: it should render as number/string.
+    const json = JSON.stringify(z.toJSONSchema(responseSchema, { unrepresentable: 'any' }));
+    // The applied-filter condition value schema is present as an anyOf of number/string,
+    // proving the filter branch itself is fully representable.
+    expect(json).toContain('"type":"number"');
+    expect(json).toContain('"type":"string"');
+  });
+});

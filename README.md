@@ -456,7 +456,7 @@ queryParamsSchema().parse({ filter: "createdAt:$gt:2024-01-01" });
 // pagination.filters.condition.value → Date(2024-01-01)  (not the string "2024-01-01")
 ```
 
-> Note: the `filter` echoed back in the response metadata (`pagination.filter`) is a JSON-serializable `WhereNode` (dates as ISO strings); only the parsed query params expose real `Date` objects.
+> Note: the `filter` echoed back in the response metadata (`pagination.filter`) is a JSON-serializable `WhereNode`. You can pass the parsed AST (with `Date` objects) straight into your response — `responseSchema` and `validatorSchema` accept `Date` values and **normalize them back to ISO strings** automatically, so JSON Schema / OpenAPI generation stays intact.
 
 ### Negation: `$not`
 
