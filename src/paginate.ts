@@ -10,6 +10,7 @@ import {
   findNestedDiscriminators,
   getDiscriminatorKey,
   getOwnProp,
+  getProp,
   getZodAtPath,
   type InferData,
   isPlainObject,
@@ -1075,7 +1076,8 @@ export interface PaginateResult<
 function callMethodIfReturnsZod(obj: unknown, methodName: string): z.ZodType | undefined {
   if (!isPlainObject(obj)) return undefined;
 
-  const maybeFn = getOwnProp(obj, methodName);
+  // Zod v4 exposes methods like `unwrap` on the prototype, so read via `getProp`.
+  const maybeFn = getProp(obj, methodName);
   if (typeof maybeFn !== 'function') return undefined;
 
   const result = maybeFn.call(obj);
@@ -1087,7 +1089,7 @@ function callMethodIfReturnsZod(obj: unknown, methodName: string): z.ZodType | u
 function getInnerSchemaFromDef(obj: unknown): z.ZodType | undefined {
   if (!isPlainObject(obj)) return undefined;
 
-  const def = getOwnProp(obj, 'def') ?? getOwnProp(obj, '_def');
+  const def = getProp(obj, 'def') ?? getProp(obj, '_def');
   if (!isPlainObject(def)) return undefined;
 
   const candidates = ['innerType', 'schema', 'type', 'in', 'out'];

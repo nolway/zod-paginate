@@ -309,19 +309,32 @@ export function getOwnProp(obj: Record<string, unknown>, key: string): unknown {
   return obj[key];
 }
 
+/**
+ * Read a property that may be exposed as a (lazy) getter on the prototype.
+ *
+ * Zod v4 exposes accessors like `parse`, `shape`, `options`, `element` and
+ * `unwrap` on the prototype (some are lazily materialized on first access), so
+ * `getOwnProp` (own-property only) misses them. Detection helpers must therefore
+ * use property access, not `hasOwnProperty`.
+ */
+export function getProp(obj: Record<string, unknown>, key: string): unknown {
+  if (!(key in obj)) return undefined;
+  return obj[key];
+}
+
 /** Duck-typed Zod schema check. */
 export function isZodSchema(v: unknown): v is z.ZodType {
   if (!isPlainObject(v)) return false;
-  const parseFn = getOwnProp(v, 'parse');
+  const parseFn = getProp(v, 'parse');
   return typeof parseFn === 'function';
 }
 
 /** Duck-typed ZodObject check. */
 function isZodObjectSchema(v: unknown): v is z.ZodObject<z.ZodRawShape> {
   if (!isPlainObject(v)) return false;
-  const parseFn = getOwnProp(v, 'parse');
+  const parseFn = getProp(v, 'parse');
   if (typeof parseFn !== 'function') return false;
-  const shape = getOwnProp(v, 'shape');
+  const shape = getProp(v, 'shape');
   return isPlainObject(shape);
 }
 
@@ -330,7 +343,7 @@ function isZodUnionSchema(
   v: unknown,
 ): v is { options: (z.ZodObject<z.ZodRawShape> | z.ZodType)[] } & z.ZodType {
   if (!isPlainObject(v)) return false;
-  const options = getOwnProp(v, 'options');
+  const options = getProp(v, 'options');
   if (!Array.isArray(options) || options.length === 0) return false;
   // Each option must be a ZodObject or another union
   return options.every((o) => isZodObjectSchema(o) || isZodUnionSchema(o));
@@ -339,7 +352,7 @@ function isZodUnionSchema(
 /** Duck-typed: get the element schema from a ZodArray. Returns undefined if not a ZodArray. */
 function getZodArrayElement(v: unknown): z.ZodType | undefined {
   if (!isPlainObject(v)) return undefined;
-  const element = getOwnProp(v, 'element');
+  const element = getProp(v, 'element');
   if (isZodSchema(element)) return element;
   return undefined;
 }
@@ -347,7 +360,7 @@ function getZodArrayElement(v: unknown): z.ZodType | undefined {
 /** Try to unwrap one layer (optional, nullable, etc.) via `unwrap()` method. */
 function tryZodUnwrap(v: unknown): z.ZodType | undefined {
   if (!isPlainObject(v)) return undefined;
-  const fn = getOwnProp(v, 'unwrap');
+  const fn = getProp(v, 'unwrap');
   if (typeof fn !== 'function') return undefined;
   const result: unknown = fn.call(v);
   if (isZodSchema(result)) return result;
@@ -426,25 +439,25 @@ export function collectLeafObjects(schema: DataSchema | z.ZodType): z.ZodObject<
  */
 export function getDiscriminatorKey(schema: DataSchema): string | undefined {
   if (!isPlainObject(schema)) return undefined;
-  const def = getOwnProp(schema, '_def');
+  const def = getProp(schema, 'def') ?? getProp(schema, '_def');
   if (!isPlainObject(def)) return undefined;
-  const disc = getOwnProp(def, 'discriminator');
+  const disc = getProp(def, 'discriminator');
   return typeof disc === 'string' ? disc : undefined;
 }
 
 /** Same as getDiscriminatorKey but accepts any value (for recursive schema walking). */
 function getDiscriminatorKeyFromAny(schema: unknown): string | undefined {
   if (!isPlainObject(schema)) return undefined;
-  const def = getOwnProp(schema, '_def');
+  const def = getProp(schema, 'def') ?? getProp(schema, '_def');
   if (!isPlainObject(def)) return undefined;
-  const disc = getOwnProp(def, 'discriminator');
+  const disc = getProp(def, 'discriminator');
   return typeof disc === 'string' ? disc : undefined;
 }
 
 /** Duck-typed check for union-like schemas on any value. */
 function isUnionLike(v: unknown): v is { options: unknown[] } {
   if (!isPlainObject(v)) return false;
-  const options = getOwnProp(v, 'options');
+  const options = getProp(v, 'options');
   return Array.isArray(options) && options.length > 0;
 }
 

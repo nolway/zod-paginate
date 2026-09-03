@@ -1482,7 +1482,7 @@ describe('Integration: zod-openapi', () => {
       });
 
       const { schema } = createSchema(responseSchema);
-      const props = 'properties' in schema ? schema.properties : undefined;
+      const props = isPlainObject(schema) && 'properties' in schema ? schema.properties : undefined;
 
       expect(props).toBeDefined();
       expect(props).toHaveProperty('data');
