@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.0.10](https://github.com/nolway/zod-paginate/compare/v2.0.9...v2.0.10) (2026-09-03)
+
+
+### Miscellaneous Chores
+
+* release 2.0.10 ([9d888ff](https://github.com/nolway/zod-paginate/commit/9d888ff7d1760a1ef20ce173f6dd48da2162182d))
+
 ## [2.0.9](https://github.com/nolway/zod-paginate/compare/v2.0.8...v2.0.9) (2026-09-02)
 
 
