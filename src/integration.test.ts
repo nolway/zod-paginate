@@ -1488,6 +1488,35 @@ describe('Integration: zod-openapi', () => {
       expect(props).toHaveProperty('data');
       expect(props).toHaveProperty('pagination');
     });
+
+    it('renders $btw bounds as a draft-agnostic array (no prefixItems / items:false)', () => {
+      const { responseSchema } = paginate({
+        paginationType: 'LIMIT_OFFSET',
+        dataSchema: ProductSchema,
+        selectable: ['id', 'name', 'price'],
+        defaultSelect: '*',
+        defaultLimit: 20,
+        maxLimit: 100,
+        filterable: { price: { type: 'number', ops: ['$btw'] } },
+      });
+
+      const { components } = createSchema(responseSchema);
+
+      expect(components.FilterCondition).toMatchObject({
+        oneOf: expect.arrayContaining([
+          {
+            type: 'object',
+            properties: expect.objectContaining({
+              op: { type: 'string', const: '$btw' },
+              // Exact match: no `prefixItems`, and `items` must be a schema (not `false`)
+              value: { type: 'array', items: expect.any(Object), minItems: 2, maxItems: 2 },
+            }),
+            required: ['group', 'op', 'value'],
+            additionalProperties: false,
+          },
+        ]),
+      });
+    });
   });
 
   describe('discriminated union schemas with zod-openapi', () => {
