@@ -150,6 +150,22 @@ export const NumericStringSchema = z
  */
 export const NumOrDateSchema = z.union([z.number(), z.string()]);
 
+type NumOrDate = z.infer<typeof NumOrDateSchema>;
+
+/**
+ * `$btw` bounds. Uses a fixed-length array instead of `z.tuple()` because recent Zod versions
+ * render tuples as `prefixItems` + `items: false` (JSON Schema 2020-12). Draft-07 validators
+ * such as the Ajv used by fast-json-stringify (Fastify) ignore `prefixItems` but honor
+ * `items: false`, which rejects every non-empty array and breaks response serialization.
+ * The overload keeps the public tuple type.
+ */
+function buildBetweenValueSchema(): z.ZodType<[NumOrDate, NumOrDate], [NumOrDate, NumOrDate]>;
+function buildBetweenValueSchema(): z.ZodType {
+  return z.array(NumOrDateSchema).length(2);
+}
+
+const BetweenValueSchema = buildBetweenValueSchema();
+
 type FieldType = 'string' | 'number' | 'date' | 'any';
 
 type FieldTypeFromValue<V> = V extends Date
@@ -218,7 +234,7 @@ export const ConditionSchema = z
       combinator: CombinatorSchema.optional(),
       op: z.literal('$btw'),
       not: z.literal(true).optional(),
-      value: z.tuple([NumOrDateSchema, NumOrDateSchema]),
+      value: BetweenValueSchema,
     }),
   ])
   .meta({
