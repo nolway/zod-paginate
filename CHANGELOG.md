@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.0.11](https://github.com/nolway/zod-paginate/compare/v2.0.10...v2.0.11) (2026-11-02)
+
+
+### Bug Fixes
+
+* use an array instead of a tuple to get btw inputs ([d93bd2a](https://github.com/nolway/zod-paginate/commit/d93bd2a1c13e85027f3115bf7d1635044ac999bf))
+
 ## [2.0.10](https://github.com/nolway/zod-paginate/compare/v2.0.9...v2.0.10) (2026-09-03)
 
 
