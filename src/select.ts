@@ -1165,11 +1165,18 @@ export function select<
             }
           }
         })
-        .transform((val): SelectQueryParams<TSchema, TSelectable[number]> => {
+        .transform((val, ctx): SelectQueryParams<TSchema, TSelectable[number]> => {
           const resolved = computeSelect(val.select, effectiveConfig);
 
+          // Reachable e.g. with `defaultSelect: []`: report it as an issue, since errors
+          // thrown inside a transform escape safeParse instead of becoming Zod issues.
           if (!resolved || resolved.length === 0) {
-            throw new Error('select resolved to empty (this should not happen after validation)');
+            ctx.addIssue({
+              code: 'custom',
+              path: ['select'],
+              message: 'select resolved to an empty list of fields',
+            });
+            return z.NEVER;
           }
 
           // Safe: resolved values come from config.selectable (discriminator enforced at type level).
@@ -1227,28 +1234,33 @@ export function select<
   ): z.ZodType {
     if (!extraShape) return baseQueryParamsSchema;
 
-    const extraSchema = z.object(extraShape);
+    // Extra fields are validated (and transformed) once by the outer object below;
+    // re-parsing them would run non-idempotent transforms twice.
+    const extraKeys = Object.keys(extraShape);
+    const forwardIssues = (issues: z.core.$ZodIssue[], ctx: z.RefinementCtx): void => {
+      for (const issue of issues) {
+        ctx.addIssue({ code: 'custom', message: issue.message, path: issue.path });
+      }
+    };
+
     return z
       .object({ ...rootShape, ...extraShape })
       .catchall(z.unknown())
       .superRefine((raw, ctx) => {
         const baseResult = baseQueryParamsSchema.safeParse(raw);
-        if (!baseResult.success) {
-          for (const issue of baseResult.error.issues) {
-            ctx.addIssue({ code: 'custom', message: issue.message, path: issue.path });
-          }
-        }
-        const extraResult = extraSchema.safeParse(raw);
-        if (!extraResult.success) {
-          for (const issue of extraResult.error.issues) {
-            ctx.addIssue({ code: 'custom', message: issue.message, path: issue.path });
-          }
-        }
+        if (!baseResult.success) forwardIssues(baseResult.error.issues, ctx);
       })
-      .transform((raw) => ({
-        ...baseQueryParamsSchema.parse(raw),
-        ...extraSchema.parse(raw),
-      }));
+      .transform((raw, ctx) => {
+        const baseResult = baseQueryParamsSchema.safeParse(raw);
+        if (!baseResult.success) {
+          forwardIssues(baseResult.error.issues, ctx);
+          return z.NEVER;
+        }
+        const extra = Object.fromEntries(
+          extraKeys.filter((key) => key in raw).map((key) => [key, raw[key]]),
+        );
+        return { ...baseResult.data, ...extra };
+      });
   }
 
   return {

@@ -450,6 +450,43 @@ describe('select', () => {
     expect(parsed.search).toBe('test');
   });
 
+  it('queryParamsSchema(extra): runs extra field transforms only once', () => {
+    const { queryParamsSchema } = makeSelect();
+
+    const parsed = queryParamsSchema({ count: z.string().transform(Number) }).parse({
+      count: '5',
+    });
+
+    expect(parsed.count).toBe(5);
+  });
+
+  it('queryParamsSchema(extra): does not duplicate extra field issues', () => {
+    const { queryParamsSchema } = makeSelect();
+
+    const result = queryParamsSchema({ search: z.string().min(3) }).safeParse({
+      select: 'unknownField',
+      search: 'ab',
+    });
+
+    expect(result.success).toBe(false);
+    const paths = result.error?.issues.map((i) => i.path.join('.'));
+    expect(paths?.filter((p) => p === 'search')).toHaveLength(1);
+    expect(paths?.some((p) => p.startsWith('select'))).toBe(true);
+  });
+
+  it('reports an empty resolved select as a Zod issue instead of throwing', () => {
+    const { queryParamsSchema } = select({
+      dataSchema: z.object({ id: z.number(), name: z.string() }),
+      selectable: ['id', 'name'],
+      defaultSelect: [],
+    });
+
+    const result = queryParamsSchema().safeParse({});
+
+    expect(result.success).toBe(false);
+    expect(result.error?.issues.map((i) => i.path)).toContainEqual(['select']);
+  });
+
   describe('decorative fields', () => {
     it('decorativeFields is undefined when no decorative config is set', () => {
       const { queryParamsSchema } = select({

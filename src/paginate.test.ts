@@ -1919,6 +1919,55 @@ describe('paginate edge cases', () => {
     ).toThrow();
   });
 
+  it('queryParamsSchema(extra): runs extra field transforms only once', () => {
+    const { queryParamsSchema } = makeLimitOffset();
+
+    const parsed = queryParamsSchema({ count: z.string().transform(Number) }).parse({
+      count: '5',
+    });
+
+    expect(parsed.count).toBe(5);
+  });
+
+  it('queryParamsSchema(extra): does not duplicate extra field issues', () => {
+    const { queryParamsSchema } = makeLimitOffset();
+
+    const result = queryParamsSchema({ search: z.string().min(3) }).safeParse({
+      limit: '999',
+      search: 'ab',
+    });
+
+    expect(result.success).toBe(false);
+    const paths = result.error?.issues.map((i) => i.path.join('.'));
+    expect(paths?.filter((p) => p === 'search')).toHaveLength(1);
+    expect(paths).toContain('limit');
+  });
+
+  it('response schemas report an invalid Date in the filter AST as a Zod issue', () => {
+    const { responseSchema, validatorSchema } = makeLimitOffset();
+
+    const response = {
+      data: [],
+      pagination: {
+        itemsPerPage: 10,
+        totalItems: 0,
+        currentPage: 1,
+        totalPages: 1,
+        filter: {
+          type: 'filter',
+          field: 'createdAt',
+          condition: { group: '0', op: '$eq', value: new Date('not a date') },
+        },
+      },
+    };
+
+    for (const schema of [responseSchema, validatorSchema()]) {
+      const result = schema.safeParse(response);
+      expect(result.success).toBe(false);
+      expect(result.error).toBeInstanceOf(z.ZodError);
+    }
+  });
+
   /* ---- Malformed date that passes regex but fails Date.parse ---- */
 
   it('rejects dates that match ISO regex but fail Date.parse', () => {

@@ -376,6 +376,38 @@ describe('Integration: LIMIT_OFFSET full flow', () => {
       expect(result.error.issues.some((i) => i.message.includes('"email"'))).toBe(true);
     }
   });
+
+  it.each([
+    ['$gte with a non number/date value', { filter: 'age:$gte:abc' }, ['filter', 0]],
+    ['$btw with a single bound', { filter: ['role:$eq:admin', 'age:$btw:18'] }, ['filter', 1]],
+    ['$btw with mixed bound types', { filter: 'createdAt:$btw:2024-01-01,42' }, ['filter', 0]],
+    ['unknown operator', { filter: 'age:$foo:1' }, ['filter', 0]],
+    ['non-integer group id', { filter: 'age:$g:x:$gte:1' }, ['filter', 0]],
+    ['combinator without condition', { filter: 'age:$g:1:$or' }, ['filter', 0]],
+    ['$not without operator', { filter: 'createdAt:$not' }, ['filter', 0]],
+    ['invalid group join', { filter: 'age:$gte:1', group: '1:join:$xor' }, ['group', 0]],
+    ['invalid group parent', { filter: 'age:$gte:1', group: '1:parent:abc' }, ['group', 0]],
+    ['invalid sort direction', { sortBy: ['id:ASC', 'id:SIDEWAYS'] }, ['sortBy', 1]],
+  ])('reports %s as a Zod issue instead of throwing', (label, input, expectedPath) => {
+    const { queryParamsSchema } = setup();
+
+    const result = queryParamsSchema().safeParse(input);
+
+    expect(result.success, label).toBe(false);
+    expect(result.error).toBeInstanceOf(z.ZodError);
+    expect(result.error?.issues.map((i) => i.path)).toContainEqual(expectedPath);
+  });
+
+  it('reports DSL parsing errors as Zod issues with an extra shape', () => {
+    const { queryParamsSchema } = setup();
+
+    const result = queryParamsSchema({ search: z.string().optional() }).safeParse({
+      filter: 'age:$gte:abc',
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.error?.issues.map((i) => i.path)).toContainEqual(['filter', 0]);
+  });
 });
 
 /* ========================================================================= */

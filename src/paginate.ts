@@ -320,6 +320,11 @@ const WhereNodeSchema: z.ZodType<WhereNode> = z
 function normalizeFilterNodeDates(node: unknown): unknown {
   if (typeof node !== 'object' || node === null) return node;
 
+  // Invalid dates are left untouched (toISOString would throw a RangeError inside
+  // preprocess); WhereNodeSchema then rejects them as a regular Zod issue.
+  const toIso = (v: unknown): unknown =>
+    v instanceof Date && !Number.isNaN(v.getTime()) ? v.toISOString() : v;
+
   if ('items' in node && Array.isArray(node.items)) {
     return { ...node, items: node.items.map(normalizeFilterNodeDates) };
   }
@@ -328,12 +333,7 @@ function normalizeFilterNodeDates(node: unknown): unknown {
     const condition = node.condition;
     if ('value' in condition) {
       const value = condition.value;
-      let normalized: unknown = value;
-      if (Array.isArray(value)) {
-        normalized = value.map((v) => (v instanceof Date ? v.toISOString() : v));
-      } else if (value instanceof Date) {
-        normalized = value.toISOString();
-      }
+      const normalized = Array.isArray(value) ? value.map(toIso) : toIso(value);
       return { ...node, condition: { ...condition, value: normalized } };
     }
   }
@@ -361,14 +361,24 @@ interface GroupDef {
 }
 type GroupDefs = Record<string, GroupDef>;
 
-function extractGroupDefs(q: Record<string, unknown>): GroupDefs {
+/** Called when a raw query entry (at `index` in its array) cannot be parsed. */
+type ParseErrorHandler = (index: number, message: string) => void;
+
+/** Turn anything thrown by the DSL parsers (plain Error or nested ZodError) into a readable message. */
+function errorToMessage(e: unknown): string {
+  if (e instanceof z.ZodError) return e.issues.map((issue) => issue.message).join('; ');
+  if (e instanceof Error) return e.message;
+  return String(e);
+}
+
+function extractGroupDefs(q: Record<string, unknown>, onError?: ParseErrorHandler): GroupDefs {
   const defs: GroupDefs = {};
 
-  const raw = q.group;
+  const raw: unknown = q.group;
   if (!Array.isArray(raw)) return defs;
-  const entries: string[] = raw.filter((x): x is string => typeof x === 'string');
 
-  for (const entry of entries) {
+  for (const [index, entry] of raw.entries()) {
+    if (typeof entry !== 'string') continue;
     // Format: "id:key:value,key:value"
     const colonIdx = entry.indexOf(':');
     if (colonIdx === -1) continue;
@@ -382,20 +392,26 @@ function extractGroupDefs(q: Record<string, unknown>): GroupDefs {
 
     const current = defs[id] ?? {};
 
-    for (const pair of propsRaw.split(',')) {
-      const pairColonIdx = pair.indexOf(':');
-      if (pairColonIdx === -1) continue;
+    try {
+      for (const pair of propsRaw.split(',')) {
+        const pairColonIdx = pair.indexOf(':');
+        if (pairColonIdx === -1) continue;
 
-      const prop = pair.slice(0, pairColonIdx).trim();
-      const value = pair.slice(pairColonIdx + 1).trim();
+        const prop = pair.slice(0, pairColonIdx).trim();
+        const value = pair.slice(pairColonIdx + 1).trim();
 
-      if (prop === 'parent') {
-        current.parent = IntegerStringSchema.parse(value);
-      } else if (prop === 'join') {
-        current.join = CombinatorSchema.parse(value);
-      } else if (prop === 'op') {
-        current.op = CombinatorSchema.parse(value);
+        if (prop === 'parent') {
+          current.parent = IntegerStringSchema.parse(value);
+        } else if (prop === 'join') {
+          current.join = CombinatorSchema.parse(value);
+        } else if (prop === 'op') {
+          current.op = CombinatorSchema.parse(value);
+        }
       }
+    } catch (e) {
+      if (!onError) throw e;
+      onError(index, `Invalid group "${entry}": ${errorToMessage(e)}`);
+      continue;
     }
 
     defs[id] = current;
@@ -712,14 +728,17 @@ function parseSingleCondition(raw: string): Condition {
 /* Extract raw filters */
 /* ---------------------------------- */
 
-function extractAndNormalizeRawFilters(q: Record<string, unknown>): Record<string, Condition[]> {
+function extractAndNormalizeRawFilters(
+  q: Record<string, unknown>,
+  onError?: ParseErrorHandler,
+): Record<string, Condition[]> {
   const result: Record<string, Condition[]> = {};
 
-  const raw = q.filter;
+  const raw: unknown = q.filter;
   if (!Array.isArray(raw)) return result;
-  const entries: string[] = raw.filter((x): x is string => typeof x === 'string');
 
-  for (const entry of entries) {
+  for (const [index, entry] of raw.entries()) {
+    if (typeof entry !== 'string') continue;
     // Format: "field:$op:value" — first colon separates field from DSL
     const colonIdx = entry.indexOf(':');
     if (colonIdx === -1) continue;
@@ -730,7 +749,15 @@ function extractAndNormalizeRawFilters(q: Record<string, unknown>): Record<strin
     const dsl = entry.slice(colonIdx + 1);
     if (!dsl) continue;
 
-    const condition = parseSingleCondition(dsl);
+    let condition: Condition;
+    try {
+      condition = parseSingleCondition(dsl);
+    } catch (e) {
+      if (!onError) throw e;
+      onError(index, `Invalid filter "${entry}": ${errorToMessage(e)}`);
+      continue;
+    }
+
     const list = result[field] ?? [];
     list.push(condition);
     result[field] = list;
@@ -1616,15 +1643,30 @@ export function paginate<
     .transform(
       (
         q,
+        ctx,
       ): Record<string, unknown> & {
         rawFilters: Record<string, Condition[]>;
         groupDefs: GroupDefs;
       } => {
-        return {
-          ...q,
-          rawFilters: extractAndNormalizeRawFilters(q),
-          groupDefs: extractGroupDefs(q),
-        };
+        // Errors thrown inside a transform are not converted to Zod issues,
+        // so DSL parsing failures must be reported through ctx explicitly.
+        const errors: { path: [string, number]; message: string }[] = [];
+        const reportAt =
+          (key: 'filter' | 'group'): ParseErrorHandler =>
+          (index, message) => {
+            errors.push({ path: [key, index], message });
+          };
+
+        const rawFilters = extractAndNormalizeRawFilters(q, reportAt('filter'));
+        const groupDefs = extractGroupDefs(q, reportAt('group'));
+        if (errors.length > 0) {
+          for (const { path, message } of errors) {
+            ctx.addIssue({ code: 'custom', path, message, input: q[path[0]] });
+          }
+          return z.NEVER;
+        }
+
+        return { ...q, rawFilters, groupDefs };
       },
     )
     .pipe(
@@ -1767,7 +1809,18 @@ export function paginate<
               const cleaned = val.sortBy.map((s) => s.trim()).filter(Boolean);
               let index = 0;
               for (const raw of cleaned) {
-                const parsed = parseSortItem(raw);
+                let parsed: SortItem;
+                try {
+                  parsed = parseSortItem(raw);
+                } catch (e) {
+                  ctx.addIssue({
+                    code: 'custom',
+                    path: ['sortBy', index],
+                    message: `Invalid sortBy "${raw}": ${errorToMessage(e)}`,
+                  });
+                  index += 1;
+                  continue;
+                }
                 if (!allowedSortable.has(parsed.property)) {
                   ctx.addIssue({
                     code: 'custom',
@@ -1999,28 +2052,33 @@ export function paginate<
   ): z.ZodType {
     if (!extraShape) return baseQueryParamsSchema;
 
-    const extraSchema = z.object(extraShape);
+    // Extra fields are validated (and transformed) once by the outer object below;
+    // re-parsing them would run non-idempotent transforms twice.
+    const extraKeys = Object.keys(extraShape);
+    const forwardIssues = (issues: z.core.$ZodIssue[], ctx: z.RefinementCtx): void => {
+      for (const issue of issues) {
+        ctx.addIssue({ code: 'custom', message: issue.message, path: issue.path });
+      }
+    };
+
     return z
       .object({ ...rootShape, ...extraShape })
       .catchall(z.unknown())
       .superRefine((raw, ctx) => {
         const pagResult = baseQueryParamsSchema.safeParse(raw);
-        if (!pagResult.success) {
-          for (const issue of pagResult.error.issues) {
-            ctx.addIssue({ code: 'custom', message: issue.message, path: issue.path });
-          }
-        }
-        const extraResult = extraSchema.safeParse(raw);
-        if (!extraResult.success) {
-          for (const issue of extraResult.error.issues) {
-            ctx.addIssue({ code: 'custom', message: issue.message, path: issue.path });
-          }
-        }
+        if (!pagResult.success) forwardIssues(pagResult.error.issues, ctx);
       })
-      .transform((raw) => ({
-        ...baseQueryParamsSchema.parse(raw),
-        ...extraSchema.parse(raw),
-      }));
+      .transform((raw, ctx) => {
+        const pagResult = baseQueryParamsSchema.safeParse(raw);
+        if (!pagResult.success) {
+          forwardIssues(pagResult.error.issues, ctx);
+          return z.NEVER;
+        }
+        const extra = Object.fromEntries(
+          extraKeys.filter((key) => key in raw).map((key) => [key, raw[key]]),
+        );
+        return { ...pagResult.data, ...extra };
+      });
   }
 
   return { queryParamsSchema, validatorSchema, responseSchema };
