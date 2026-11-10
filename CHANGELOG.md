@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.0.12](https://github.com/nolway/zod-paginate/compare/v2.0.11...v2.0.12) (2026-11-10)
+
+
+### Bug Fixes
+
+* return zod errors instead of just a throw ([a62cd8b](https://github.com/nolway/zod-paginate/commit/a62cd8b63d2d7d20b90dcafbd8ccbf7b0f046589))
+
 ## [2.0.11](https://github.com/nolway/zod-paginate/compare/v2.0.10...v2.0.11) (2026-11-02)
 
 
