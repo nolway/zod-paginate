@@ -1,6 +1,7 @@
 /// <reference types="zod-openapi" />
 import { z } from 'zod';
 import {
+  type AllowedLeafPath,
   type AllowedPath,
   type AllowedSelectablePath,
   computeSelect,
@@ -13,6 +14,7 @@ import {
   getProp,
   getZodAtPath,
   type InferData,
+  isPathCoveredBySelection,
   isPlainObject,
   isZodSchema,
   type NoDuplicateProperties,
@@ -27,6 +29,9 @@ import {
   type UntypedSelectableConfig,
   type ZodShape,
 } from './select';
+
+/** Narrow selectable paths to leaf paths: whole objects can be selected but not sorted or filtered. */
+type LeafOf<TSchema extends DataSchema, TPath> = Extract<TPath, AllowedLeafPath<TSchema>>;
 
 /* ---------------------------------- */
 /* Pagination config */
@@ -1345,16 +1350,18 @@ function buildCursorResponseSchema(
 export function paginate<
   TSchema extends DataSchema,
   const TSelectable extends readonly AllowedSelectablePath<TSchema>[],
-  const TSortable extends readonly NoInfer<TSelectable[number]>[] = readonly NoInfer<
-    TSelectable[number]
-  >[],
+  const TSortable extends readonly LeafOf<TSchema, NoInfer<TSelectable[number]>>[] =
+    readonly LeafOf<TSchema, NoInfer<TSelectable[number]>>[],
   const TDefaultSelect extends readonly NoInfer<TSelectable[number]>[] = readonly NoInfer<
     TSelectable[number]
   >[],
   const TDefaultSortBy extends readonly {
-    property: NoInfer<TSelectable[number]>;
+    property: LeafOf<TSchema, NoInfer<TSelectable[number]>>;
     direction: SortDirection;
-  }[] = readonly { property: NoInfer<TSelectable[number]>; direction: SortDirection }[],
+  }[] = readonly {
+    property: LeafOf<TSchema, NoInfer<TSelectable[number]>>;
+    direction: SortDirection;
+  }[],
 >(
   config: Omit<
     CommonQueryConfigFromSchema<TSchema, TSelectable[number]>,
@@ -1373,7 +1380,7 @@ export function paginate<
       defaultSortBy?: NoDuplicateProperties<TDefaultSortBy>;
       /** Map of filterable fields to their allowed type and operators. Enables the `filter` query parameter. */
       filterable?: Partial<{
-        [P in NoInfer<TSelectable[number]>]: FilterableFieldConfig<
+        [P in LeafOf<TSchema, NoInfer<TSelectable[number]>>]: FilterableFieldConfig<
           FieldTypeFromValue<PathValue<InferData<TSchema>, P>>
         >;
       }>;
@@ -1383,16 +1390,18 @@ export function paginate<
 export function paginate<
   TSchema extends DataSchema,
   const TSelectable extends readonly AllowedSelectablePath<TSchema>[],
-  const TSortable extends readonly NoInfer<TSelectable[number]>[] = readonly NoInfer<
-    TSelectable[number]
-  >[],
+  const TSortable extends readonly LeafOf<TSchema, NoInfer<TSelectable[number]>>[] =
+    readonly LeafOf<TSchema, NoInfer<TSelectable[number]>>[],
   const TDefaultSelect extends readonly NoInfer<TSelectable[number]>[] = readonly NoInfer<
     TSelectable[number]
   >[],
   const TDefaultSortBy extends readonly {
-    property: NoInfer<TSelectable[number]>;
+    property: LeafOf<TSchema, NoInfer<TSelectable[number]>>;
     direction: SortDirection;
-  }[] = readonly { property: NoInfer<TSelectable[number]>; direction: SortDirection }[],
+  }[] = readonly {
+    property: LeafOf<TSchema, NoInfer<TSelectable[number]>>;
+    direction: SortDirection;
+  }[],
 >(
   config: Omit<
     CommonQueryConfigFromSchema<TSchema, TSelectable[number]>,
@@ -1411,7 +1420,7 @@ export function paginate<
       defaultSortBy?: NoDuplicateProperties<TDefaultSortBy>;
       /** Map of filterable fields to their allowed type and operators. Enables the `filter` query parameter. */
       filterable?: Partial<{
-        [P in NoInfer<TSelectable[number]>]: FilterableFieldConfig<
+        [P in LeafOf<TSchema, NoInfer<TSelectable[number]>>]: FilterableFieldConfig<
           FieldTypeFromValue<PathValue<InferData<TSchema>, P>>
         >;
       }>;
@@ -1421,16 +1430,18 @@ export function paginate<
 export function paginate<
   TSchema extends DataSchema,
   const TSelectable extends readonly AllowedSelectablePath<TSchema>[],
-  const TSortable extends readonly NoInfer<TSelectable[number]>[] = readonly NoInfer<
-    TSelectable[number]
-  >[],
+  const TSortable extends readonly LeafOf<TSchema, NoInfer<TSelectable[number]>>[] =
+    readonly LeafOf<TSchema, NoInfer<TSelectable[number]>>[],
   const TDefaultSelect extends readonly NoInfer<TSelectable[number]>[] = readonly NoInfer<
     TSelectable[number]
   >[],
   const TDefaultSortBy extends readonly {
-    property: NoInfer<TSelectable[number]>;
+    property: LeafOf<TSchema, NoInfer<TSelectable[number]>>;
     direction: SortDirection;
-  }[] = readonly { property: NoInfer<TSelectable[number]>; direction: SortDirection }[],
+  }[] = readonly {
+    property: LeafOf<TSchema, NoInfer<TSelectable[number]>>;
+    direction: SortDirection;
+  }[],
 >(
   config: Omit<
     CommonQueryConfigFromSchema<TSchema, TSelectable[number]>,
@@ -1448,7 +1459,7 @@ export function paginate<
     defaultSortBy?: NoDuplicateProperties<TDefaultSortBy>;
     /** Map of filterable fields to their allowed type and operators. Enables the `filter` query parameter. */
     filterable?: Partial<{
-      [P in NoInfer<TSelectable[number]>]: FilterableFieldConfig<
+      [P in LeafOf<TSchema, NoInfer<TSelectable[number]>>]: FilterableFieldConfig<
         FieldTypeFromValue<PathValue<InferData<TSchema>, P>>
       >;
     }>;
@@ -1459,16 +1470,18 @@ export function paginate<
   TSchema extends DataSchema,
   const TSelectable extends readonly AllowedSelectablePath<TSchema>[],
   const TDecorative extends readonly NoInfer<TSelectable[number]>[] = readonly [],
-  const TSortable extends readonly Exclude<NoInfer<TSelectable[number]>, TDecorative[number]>[] =
-    readonly Exclude<NoInfer<TSelectable[number]>, TDecorative[number]>[],
+  const TSortable extends readonly LeafOf<
+    TSchema,
+    Exclude<NoInfer<TSelectable[number]>, TDecorative[number]>
+  >[] = readonly LeafOf<TSchema, Exclude<NoInfer<TSelectable[number]>, TDecorative[number]>>[],
   const TDefaultSelect extends readonly NoInfer<TSelectable[number]>[] = readonly NoInfer<
     TSelectable[number]
   >[],
   const TDefaultSortBy extends readonly {
-    property: Exclude<NoInfer<TSelectable[number]>, TDecorative[number]>;
+    property: LeafOf<TSchema, Exclude<NoInfer<TSelectable[number]>, TDecorative[number]>>;
     direction: SortDirection;
   }[] = readonly {
-    property: Exclude<NoInfer<TSelectable[number]>, TDecorative[number]>;
+    property: LeafOf<TSchema, Exclude<NoInfer<TSelectable[number]>, TDecorative[number]>>;
     direction: SortDirection;
   }[],
 >(
@@ -1488,9 +1501,10 @@ export function paginate<
     defaultSortBy?: NoDuplicateProperties<TDefaultSortBy>;
     /** Map of filterable fields to their allowed type and operators. Enables the `filter` query parameter. */
     filterable?: Partial<{
-      [P in Exclude<TSelectable[number], TDecorative[number]>]: FilterableFieldConfig<
-        FieldTypeFromValue<PathValue<InferData<TSchema>, P>>
-      >;
+      [P in LeafOf<
+        TSchema,
+        Exclude<TSelectable[number], TDecorative[number]>
+      >]: FilterableFieldConfig<FieldTypeFromValue<PathValue<InferData<TSchema>, P>>>;
     }>;
   } & (LimitOffsetPaginationConfig | CursorPaginationConfig<InferData<TSchema>>),
 ): PaginateResult<TSchema> {
@@ -1785,7 +1799,7 @@ export function paginate<
                       );
                 if (
                   hasAnyFieldUnderPrefix &&
-                  !selectForValidation.includes(nested.discriminatorPath)
+                  !isPathCoveredBySelection(selectForValidation, nested.discriminatorPath)
                 ) {
                   ctx.addIssue({
                     code: 'custom',

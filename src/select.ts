@@ -94,7 +94,13 @@ export type DataSchema =
     >;
 export type InferData<TSchema extends DataSchema> = z.infer<TSchema>;
 export type AllowedPath<TSchema extends DataSchema> = Path<InferData<TSchema>>;
-export type AllowedSelectablePath<TSchema extends DataSchema> = LeafPath<InferData<TSchema>>;
+/**
+ * Paths usable in `selectable` / `select`: leaf fields and intermediate objects
+ * (selecting an object returns it whole, e.g. `"meta"` covers `"meta.score"`).
+ */
+export type AllowedSelectablePath<TSchema extends DataSchema> = Path<InferData<TSchema>>;
+/** Leaf-only paths (no intermediate object keys), for sorting and filtering. */
+export type AllowedLeafPath<TSchema extends DataSchema> = LeafPath<InferData<TSchema>>;
 
 /**
  * Extract the discriminator key as a string literal from a ZodDiscriminatedUnion.
@@ -225,6 +231,17 @@ export interface UntypedSelectableConfig {
  * Find a typed AllowedPath value from a string, by matching against a typed allowlist.
  * This avoids `as`: we return the existing typed value.
  */
+/**
+ * Whether `discriminatorPath` is part of the selection, either directly or because
+ * one of its ancestors is selected as a whole object (e.g. `"codec"` covers `"codec.type"`).
+ */
+export function isPathCoveredBySelection(
+  selection: readonly string[],
+  discriminatorPath: string,
+): boolean {
+  return selection.some((f) => f === discriminatorPath || discriminatorPath.startsWith(`${f}.`));
+}
+
 export function pickFromAllowlist<T extends string>(
   allowlist: readonly T[] | undefined,
   value: string,
@@ -713,7 +730,14 @@ export function projectDataSchema(
   const optionalPaths = new Set<string>();
   const unionAtPath = new Map<string, UnionSchema>();
 
-  const ensureTreeNode = (node: Record<string, unknown>, key: string): Record<string, unknown> => {
+  /**
+   * Returns the child tree node for `key`, or `undefined` when `key` is already
+   * selected as a whole (its full schema is in the tree, so sub-paths are redundant).
+   */
+  const ensureTreeNode = (
+    node: Record<string, unknown>,
+    key: string,
+  ): Record<string, unknown> | undefined => {
     const existing = node[key];
 
     if (existing === undefined) {
@@ -722,11 +746,8 @@ export function projectDataSchema(
       return child;
     }
 
+    if (isZodSchema(existing)) return undefined;
     if (isPlainObject(existing)) return existing;
-
-    if (isZodSchema(existing)) {
-      throw new Error(`Cannot project "${key}": "${key}" is selected as a leaf and as an object`);
-    }
 
     throw new Error(`Cannot project "${key}": conflicting selection`);
   };
@@ -776,9 +797,12 @@ export function projectDataSchema(
       }
 
       if (isLeaf) {
+        // Selecting a whole object overrides any sub-paths previously selected under it.
         cursor[key] = getZodAtPath(dataSchema, fullPath);
       } else {
-        cursor = ensureTreeNode(cursor, key);
+        const next = ensureTreeNode(cursor, key);
+        if (!next) break;
+        cursor = next;
       }
     }
   }
@@ -1154,7 +1178,7 @@ export function select<
                     );
               if (
                 hasAnyFieldUnderPrefix &&
-                !selectForValidation.includes(nested.discriminatorPath)
+                !isPathCoveredBySelection(selectForValidation, nested.discriminatorPath)
               ) {
                 ctx.addIssue({
                   code: 'custom',
@@ -1185,7 +1209,7 @@ export function select<
             (field): field is TSelectable[number] => typeof field === 'string',
           );
 
-          const decorativeFields = typedSelect.filter((f) => decorativeSet.has(String(f)));
+          const decorativeFields = typedSelect.filter((f) => decorativeSet.has(f));
           return {
             select: {
               fields: typedSelect,

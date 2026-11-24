@@ -1039,6 +1039,121 @@ describe('computeSelect', () => {
 });
 
 /* ---------------------------------- */
+/* Whole-object selection             */
+/* ---------------------------------- */
+
+describe('select whole nested objects', () => {
+  const ConfigSchema = z.object({
+    distribution: z.string(),
+    catalog: z.object({
+      genres: z.record(z.enum(['action', 'drama']), z.string()),
+      audioLocales: z.array(z.string()),
+      subtitleLocales: z.array(z.string()),
+    }),
+    user: z.object({
+      preferences: z.object({ defaultLocale: z.string(), theme: z.string() }),
+    }),
+  });
+
+  const catalog = {
+    genres: { action: 'Action', drama: 'Drama' },
+    audioLocales: ['fr'],
+    subtitleLocales: ['en'],
+  };
+
+  it('selects an intermediate object as a whole', () => {
+    const s = select({
+      dataSchema: ConfigSchema,
+      selectable: ['distribution', 'catalog', 'catalog.genres', 'user.preferences'],
+      defaultSelect: ['distribution'],
+      responseType: 'one',
+    });
+
+    const parsed = s.queryParamsSchema().parse({ select: 'catalog' });
+    expect(parsed.select.fields).toEqual(['catalog']);
+
+    const validator = s.validatorSchema(parsed.select);
+    expect(validator.safeParse({ data: { catalog } }).success).toBe(true);
+    // The whole object is required, not just a subset of its fields
+    expect(validator.safeParse({ data: { catalog: { genres: catalog.genres } } }).success).toBe(
+      false,
+    );
+
+    const prefs = s.validatorSchema(
+      s.queryParamsSchema().parse({ select: 'user.preferences' }).select,
+    );
+    expect(
+      prefs.safeParse({ data: { user: { preferences: { defaultLocale: 'fr', theme: 'dark' } } } })
+        .success,
+    ).toBe(true);
+  });
+
+  it('lets a parent selection cover its children regardless of order', () => {
+    for (const paths of [
+      ['catalog', 'catalog.audioLocales'],
+      ['catalog.audioLocales', 'catalog'],
+    ]) {
+      const projected = projectDataSchema(ConfigSchema, paths);
+      expect(projected.safeParse({ catalog }).success).toBe(true);
+      expect(projected.safeParse({ catalog: { audioLocales: ['fr'] } }).success).toBe(false);
+    }
+  });
+
+  it('builds the response schema when selectable mixes a parent and its children', () => {
+    const s = select({
+      dataSchema: ConfigSchema,
+      selectable: ['distribution', 'catalog', 'catalog.audioLocales'],
+      defaultSelect: ['distribution'],
+    });
+    expect(s.responseSchema.safeParse({ data: [{ catalog }] }).success).toBe(true);
+  });
+
+  it('treats a nested discriminator as selected when its parent object is selected', () => {
+    const Schema = z.object({
+      id: z.number(),
+      codec: z.discriminatedUnion('type', [
+        z.object({ type: z.literal('a'), name: z.string() }),
+        z.object({ type: z.literal('b'), title: z.string() }),
+      ]),
+    });
+    const s = select({
+      dataSchema: Schema,
+      selectable: ['id', 'codec', 'codec.type', 'codec.name'],
+      defaultSelect: ['id'],
+    });
+
+    expect(s.queryParamsSchema().safeParse({ select: 'codec' }).success).toBe(true);
+    expect(s.queryParamsSchema().safeParse({ select: 'codec.name' }).success).toBe(false);
+  });
+
+  it('selects whole objects in paginate but keeps sort/filter leaf-only', () => {
+    const p = paginate({
+      paginationType: 'LIMIT_OFFSET',
+      dataSchema: ConfigSchema,
+      selectable: ['distribution', 'catalog', 'user.preferences.theme'],
+      sortable: ['distribution', 'user.preferences.theme'],
+      defaultSelect: ['distribution'],
+      defaultLimit: 10,
+      maxLimit: 100,
+    });
+    expect(p.queryParamsSchema().parse({ select: 'catalog' }).pagination.select).toEqual([
+      'catalog',
+    ]);
+
+    paginate({
+      paginationType: 'LIMIT_OFFSET',
+      dataSchema: ConfigSchema,
+      selectable: ['distribution', 'catalog'],
+      // @ts-expect-error whole objects are not sortable
+      sortable: ['catalog'],
+      defaultSelect: ['distribution'],
+      defaultLimit: 10,
+      maxLimit: 100,
+    });
+  });
+});
+
+/* ---------------------------------- */
 /* Nested discriminated unions        */
 /* ---------------------------------- */
 
