@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.0.13](https://github.com/nolway/zod-paginate/compare/v2.0.12...v2.0.13) (2026-11-24)
+
+
+### Bug Fixes
+
+* add tree object on select ([66200da](https://github.com/nolway/zod-paginate/commit/66200da32d64aeb5bab652ca951a177423825139))
+
 ## [2.0.12](https://github.com/nolway/zod-paginate/compare/v2.0.11...v2.0.12) (2026-11-10)
 
 
