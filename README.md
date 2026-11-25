@@ -433,7 +433,7 @@ Filters use a repeated `filter` query parameter with the format `field:$op:value
 
 | Operator | Meaning | Value format | Example |
 |---|---|---|---|
-| `$eq` | equals | number / string / ISO date | `filter=status:$eq:active` |
+| `$eq` | equals | number / string / ISO date / `true` \| `false` | `filter=status:$eq:active` |
 | `$null` | is null | _(no value)_ | `filter=deletedAt:$null` |
 | `$in` | in list | comma-separated | `filter=status:$in:active,pending` |
 | `$contains` | contains values | comma-separated | `filter=tags:$contains:typescript,zod` |
@@ -447,9 +447,28 @@ Filters use a repeated `filter` query parameter with the format `field:$op:value
 
 If the filter value does **not** start with `$`, it is interpreted as `$eq:<value>`.
 
+### Field types
+
+Each `filterable` entry declares a `type`, inferred from the field in `dataSchema`. It restricts the operators you can configure and the values accepted at runtime:
+
+| `type` | Operators | Accepted values |
+|---|---|---|
+| `string` | `$eq`, `$null`, `$in`, `$contains`, `$ilike`, `$sw` | any string |
+| `number` | `$eq`, `$null`, `$in`, `$contains`, `$gt`, `$gte`, `$lt`, `$lte`, `$btw` | numbers |
+| `date` | `$eq`, `$null`, `$in`, `$contains`, `$gt`, `$gte`, `$lt`, `$lte`, `$btw` | ISO dates |
+| `boolean` | `$eq`, `$null` | `true` / `false` (lowercase) |
+| `any` | all | anything (no type check) |
+
+```ts
+filterable: {
+  active: { type: "boolean", ops: ["$eq"] },
+}
+// ?filter=active:true  or  ?filter=active:$not:$eq:true
+```
+
 ### Value output types
 
-When a field is configured with `type: "date"`, ISO date values (`$eq`, `$gt`, `$gte`, `$lt`, `$lte`, `$btw`) are **cast to `Date` objects** in the parsed output AST (`pagination.filters`). Numeric fields keep numbers, and non-date fields keep strings.
+When a field is configured with `type: "date"`, ISO date values (`$eq`, `$gt`, `$gte`, `$lt`, `$lte`, `$btw`) are **cast to `Date` objects** in the parsed output AST (`pagination.filters`). When a field is configured with `type: "boolean"`, `$eq` values are **cast to `true` / `false`**. Numeric fields keep numbers, and other fields keep strings.
 
 ```ts
 queryParamsSchema().parse({ filter: "createdAt:$gt:2024-01-01" });

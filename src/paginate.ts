@@ -150,7 +150,7 @@ export const NumericStringSchema = z
  *
  * Kept strictly `number | string` so it stays representable in JSON Schema / OpenAPI.
  * The parsed query AST (`pagination.filters`) may still hold real `Date` objects for
- * `date`-typed fields (see `coerceConditionDates`); those are normalized back to ISO
+ * `date`-typed fields (see `coerceConditionValue`); those are normalized back to ISO
  * strings when re-validated through the response schema (see `filterResponseSchema`).
  */
 export const NumOrDateSchema = z.union([z.number(), z.string()]);
@@ -171,7 +171,10 @@ function buildBetweenValueSchema(): z.ZodType {
 
 const BetweenValueSchema = buildBetweenValueSchema();
 
-type FieldType = 'string' | 'number' | 'date' | 'any';
+/** `$eq` value: like `NumOrDateSchema`, plus booleans for `boolean`-typed fields. */
+const EqValueSchema = z.union([z.number(), z.string(), z.boolean()]);
+
+type FieldType = 'string' | 'number' | 'date' | 'boolean' | 'any';
 
 type FieldTypeFromValue<V> = V extends Date
   ? 'date'
@@ -179,11 +182,14 @@ type FieldTypeFromValue<V> = V extends Date
     ? 'number'
     : V extends string
       ? 'string'
-      : 'any';
+      : V extends boolean
+        ? 'boolean'
+        : 'any';
 
 type CommonOps = '$eq' | '$null' | '$in' | '$contains';
 type StringOnlyOps = '$ilike' | '$sw';
 type ComparableOps = '$gt' | '$gte' | '$lt' | '$lte' | '$btw';
+type BooleanOps = '$eq' | '$null';
 
 type OpsForFieldType<TKind extends FieldType> = TKind extends 'string'
   ? CommonOps | StringOnlyOps
@@ -191,7 +197,9 @@ type OpsForFieldType<TKind extends FieldType> = TKind extends 'string'
     ? CommonOps | ComparableOps
     : TKind extends 'date'
       ? CommonOps | ComparableOps
-      : Operator;
+      : TKind extends 'boolean'
+        ? BooleanOps
+        : Operator;
 
 export const ConditionSchema = z
   .discriminatedUnion('op', [
@@ -207,7 +215,7 @@ export const ConditionSchema = z
       combinator: CombinatorSchema.optional(),
       op: z.literal('$eq'),
       not: z.literal(true).optional(),
-      value: NumOrDateSchema,
+      value: EqValueSchema,
     }),
 
     z.object({
@@ -253,14 +261,16 @@ type DateScalarOps = '$eq' | '$gt' | '$gte' | '$lt' | '$lte';
 
 /**
  * Widen the value of date-capable conditions so the parsed output AST can hold
- * real `Date` objects (see `coerceConditionDates`). The runtime `ConditionSchema`
+ * real `Date` objects (see `coerceConditionValue`). The runtime `ConditionSchema`
  * stays number/string so JSON Schema generation for response schemas keeps working.
  */
-type WidenConditionDates<C> = C extends { op: DateScalarOps }
-  ? Omit<C, 'value'> & { value: number | string | Date }
-  : C extends { op: '$btw' }
-    ? Omit<C, 'value'> & { value: [number | string | Date, number | string | Date] }
-    : C;
+type WidenConditionDates<C> = C extends { op: '$eq' }
+  ? Omit<C, 'value'> & { value: number | string | boolean | Date }
+  : C extends { op: DateScalarOps }
+    ? Omit<C, 'value'> & { value: number | string | Date }
+    : C extends { op: '$btw' }
+      ? Omit<C, 'value'> & { value: [number | string | Date, number | string | Date] }
+      : C;
 
 export type Condition = WidenConditionDates<RawCondition>;
 
@@ -318,8 +328,8 @@ const WhereNodeSchema: z.ZodType<WhereNode> = z
 
 /**
  * Deep-normalize a filter AST for response validation: any `Date` value produced
- * by the parsed query AST (`coerceConditionDates`) is converted back to an ISO string,
- * so the AST round-trips through `WhereNodeSchema` (which only accepts number/string)
+ * by the parsed query AST (`coerceConditionValue`) is converted back to an ISO string,
+ * so the AST round-trips through `WhereNodeSchema` (which only accepts number/string/boolean)
  * without breaking JSON Schema / OpenAPI generation.
  */
 function normalizeFilterNodeDates(node: unknown): unknown {
@@ -460,21 +470,34 @@ function validateGroupDefs(defs: GroupDefs): void {
 }
 
 /** Cast an ISO date string value to a `Date` object; leaves numbers and non-date strings untouched. */
-function isoValueToDate(value: number | string | Date): number | string | Date {
+function isoValueToDate<T>(value: T): T | Date {
   if (typeof value === 'string' && isISODateString(value)) return new Date(value);
   return value;
 }
 
+/** Cast a `"true"` / `"false"` string value to a boolean; leaves anything else untouched. */
+function stringValueToBoolean<T>(value: T): T | boolean {
+  if (value === 'true') return true;
+  if (value === 'false') return false;
+  return value;
+}
+
 /**
- * For fields configured as `date`, cast ISO date string values to `Date` objects in the
- * output AST. Only affects operators whose value can be an int or ISO date
- * (`$eq`, `$gt`, `$gte`, `$lt`, `$lte`, `$btw`); numbers and other field types are untouched.
+ * Cast condition values to the configured field type in the output AST:
+ * - `date`: ISO date strings become `Date` objects (`$eq`, `$gt`, `$gte`, `$lt`, `$lte`, `$btw`).
+ * - `boolean`: `"true"` / `"false"` become booleans (`$eq`).
+ * Other field types are untouched.
  */
-function coerceConditionDates(cond: Condition, fieldType: FieldType): Condition {
+function coerceConditionValue(cond: Condition, fieldType: FieldType): Condition {
+  if (fieldType === 'boolean') {
+    return cond.op === '$eq' ? { ...cond, value: stringValueToBoolean(cond.value) } : cond;
+  }
+
   if (fieldType !== 'date') return cond;
 
   switch (cond.op) {
     case '$eq':
+      return { ...cond, value: isoValueToDate(cond.value) };
     case '$gt':
     case '$gte':
     case '$lt':
@@ -506,7 +529,7 @@ function buildGroupConditionExprs(
         );
       }
 
-      const condition = fieldType ? coerceConditionDates(cond, fieldType(field)) : cond;
+      const condition = fieldType ? coerceConditionValue(cond, fieldType(field)) : cond;
       list.push({ type: 'filter', field, condition });
       groupNodes.set(groupId, list);
     }
@@ -860,8 +883,23 @@ function isFiniteNumber(v: unknown): boolean {
   return typeof v === 'number' && Number.isFinite(v);
 }
 
+function isBooleanValue(v: unknown): boolean {
+  return typeof v === 'boolean' || v === 'true' || v === 'false';
+}
+
 function validateConditionType(expected: FieldType, cond: Condition, field: string): string | null {
   if (expected === 'any') return null;
+
+  if (expected === 'boolean') {
+    if (cond.op === '$null') return null;
+    if (cond.op !== '$eq') {
+      return `Field "${field}" does not support "${cond.op}" (configured as boolean)`;
+    }
+    if (!isBooleanValue(cond.value)) {
+      return `Field "${field}" expects a boolean ("true" or "false") for "$eq"`;
+    }
+    return null;
+  }
 
   switch (cond.op) {
     case '$null':

@@ -2410,3 +2410,91 @@ describe('date filter round-trip through response schema', () => {
     expect(json).toContain('"type":"string"');
   });
 });
+
+/* ------------------------------------------- */
+/* Boolean filters                              */
+/* ------------------------------------------- */
+
+describe('boolean filters', () => {
+  const BoolSchema = z.object({
+    id: z.number(),
+    active: z.boolean(),
+    archived: z.boolean().nullable(),
+  });
+
+  function boolSetup(): PaginateResult<typeof BoolSchema> {
+    return paginate({
+      paginationType: 'LIMIT_OFFSET',
+      dataSchema: BoolSchema,
+      selectable: ['id', 'active', 'archived'],
+      filterable: {
+        active: { type: 'boolean', ops: ['$eq'] },
+        archived: { type: 'boolean', ops: ['$eq', '$null'] },
+      },
+      defaultSelect: '*',
+      defaultLimit: 10,
+      maxLimit: 100,
+    });
+  }
+
+  it.each([
+    ['active:$eq:true', true],
+    ['active:$eq:false', false],
+    ['active:true', true],
+  ])('casts %s to a boolean in the parsed AST', (filter, expected) => {
+    const parsed = boolSetup().queryParamsSchema().parse({ filter });
+    const node = parsed.pagination.filters;
+    expect(node?.type).toBe('filter');
+    if (node?.type === 'filter' && node.condition.op === '$eq') {
+      expect(node.condition.value).toBe(expected);
+    }
+  });
+
+  it('supports $not and $null on boolean fields', () => {
+    const { queryParamsSchema } = boolSetup();
+    expect(queryParamsSchema().safeParse({ filter: 'active:$not:$eq:true' }).success).toBe(true);
+    expect(queryParamsSchema().safeParse({ filter: 'archived:$null' }).success).toBe(true);
+  });
+
+  it.each(['active:$eq:yes', 'active:$eq:1', 'active:$eq:TRUE'])(
+    'rejects non-boolean value %s',
+    (filter) => {
+      const result = boolSetup().queryParamsSchema().safeParse({ filter });
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.issues.some((i) => i.message.includes('expects a boolean'))).toBe(true);
+      }
+    },
+  );
+
+  it('only allows $eq and $null operators on boolean fields', () => {
+    paginate({
+      paginationType: 'LIMIT_OFFSET',
+      dataSchema: BoolSchema,
+      selectable: ['id', 'active'],
+      filterable: {
+        // @ts-expect-error comparison operators are not available on booleans
+        active: { type: 'boolean', ops: ['$gt'] },
+      },
+      defaultSelect: '*',
+      defaultLimit: 10,
+      maxLimit: 100,
+    });
+  });
+
+  it('round-trips a boolean filter through the response schema', () => {
+    const { queryParamsSchema, responseSchema } = boolSetup();
+    const parsed = queryParamsSchema().parse({ filter: 'active:$eq:true' });
+    const result = responseSchema.safeParse({
+      data: [{ id: 1, active: true, archived: null }],
+      pagination: {
+        itemsPerPage: 10,
+        totalItems: 1,
+        currentPage: 1,
+        totalPages: 1,
+        filter: parsed.pagination.filters,
+      },
+    });
+    expect(result.success).toBe(true);
+  });
+});
