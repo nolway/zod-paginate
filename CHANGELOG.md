@@ -1,5 +1,17 @@
 # Changelog
 
+## [2.1.0](https://github.com/nolway/zod-paginate/compare/v2.0.13...v2.1.0) (2026-11-25)
+
+
+### Features
+
+* add boolean filter support ([f911ebb](https://github.com/nolway/zod-paginate/commit/f911ebb62984b4022f385d7022b68ff1b4784ad4))
+
+
+### Bug Fixes
+
+* bump node version on actions to 24 ([58b3d04](https://github.com/nolway/zod-paginate/commit/58b3d04594ac6cbb437d11506d45995e5efadfd4))
+
 ## [2.0.13](https://github.com/nolway/zod-paginate/compare/v2.0.12...v2.0.13) (2026-11-24)
 
 
