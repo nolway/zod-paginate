@@ -2104,3 +2104,193 @@ describe('array element path support', () => {
     });
   });
 });
+
+/* ------------------------------------------------------------------ */
+/* deepPartial through arrays / wrappers + nullable projection         */
+/* ------------------------------------------------------------------ */
+
+describe('responseSchema deep partial and nullable projection', () => {
+  const Item = z.object({ id: z.number(), label: z.string() });
+  const Data = z.object({
+    name: z.string(),
+    opt: z.object({ a: z.string(), b: z.string() }).optional(),
+    nul: z.object({ a: z.string(), b: z.string() }).nullable(),
+    nsh: z.object({ a: z.string(), b: z.string() }).nullish(),
+    items: Item.array(),
+    optItems: Item.array().optional(),
+    nulItems: Item.array().nullable(),
+    nested: z.object({ list: Item.array() }),
+    matrix: Item.array().array(),
+    tags: z.string().array(),
+  });
+  const selectable = [
+    'name',
+    'opt.a',
+    'opt.b',
+    'nul.a',
+    'nul.b',
+    'nsh.a',
+    'nsh.b',
+    'items.id',
+    'items.label',
+    'optItems.id',
+    'optItems.label',
+    'nulItems.id',
+    'nulItems.label',
+    'nested.list.id',
+    'nested.list.label',
+    'matrix.id',
+    'matrix.label',
+    'tags',
+  ] as const;
+
+  const { responseSchema, validatorSchema, queryParamsSchema } = select({
+    dataSchema: Data,
+    responseType: 'one',
+    selectable: [...selectable],
+    defaultSelect: ['name'],
+  });
+  const ok = (data: unknown): boolean => responseSchema.safeParse({ data }).success;
+  const v = (s: string, data: unknown): boolean =>
+    validatorSchema(queryParamsSchema().parse({ select: s }).select).safeParse({ data }).success;
+
+  describe('responseSchema accepts any subset of the selectable fields', () => {
+    it.each([
+      ['optional object', { opt: { a: 'x' } }],
+      ['nullable object', { nul: { a: 'x' } }],
+      ['nullable object set to null', { nul: null }],
+      ['nullish object', { nsh: { a: 'x' } }],
+      ['nullish object set to null', { nsh: null }],
+      ['array of objects', { items: [{ id: 1 }] }],
+      ['optional array of objects', { optItems: [{ id: 1 }] }],
+      ['nullable array of objects', { nulItems: [{ id: 1 }] }],
+      ['nullable array set to null', { nulItems: null }],
+      ['array nested in an object', { nested: { list: [{ id: 1 }] } }],
+      ['array of arrays', { matrix: [[{ id: 1 }]] }],
+      ['full items', { items: [{ id: 1, label: 'a' }] }],
+      ['array of primitives', { tags: ['a'] }],
+      ['missing nullable field', { nul: undefined }],
+      ['empty object', {}],
+    ])('%s', (label, data) => {
+      expect(ok(data), label).toBe(true);
+    });
+
+    it.each([
+      ['wrong primitive in array', { tags: [1] }],
+      ['wrong leaf type in array element', { items: [{ id: 'x' }] }],
+      ['wrong leaf type in array of arrays', { matrix: [[{ id: 'x' }]] }],
+      ['null for a non-nullable array', { items: null }],
+      ['null for a non-nullable object', { opt: null }],
+      ['flat array for an array of arrays', { matrix: [{ id: 1 }] }],
+    ])('still rejects %s', (label, data) => {
+      expect(ok(data), label).toBe(false);
+    });
+  });
+
+  describe('validatorSchema keeps the nullability of nested paths', () => {
+    it('accepts null for a nullable object when one of its children is selected', () => {
+      expect(v('nul.a', { nul: null })).toBe(true);
+      expect(v('nul.a', { nul: { a: 'x' } })).toBe(true);
+      expect(v('nul.a', { nul: {} })).toBe(false);
+    });
+
+    it('accepts null and undefined for a nullish object', () => {
+      expect(v('nsh.a', { nsh: null })).toBe(true);
+      expect(v('nsh.a', {})).toBe(true);
+    });
+
+    it('accepts null for a nullable array of objects', () => {
+      expect(v('nulItems.id', { nulItems: null })).toBe(true);
+      expect(v('nulItems.id', { nulItems: [{ id: 1 }] })).toBe(true);
+    });
+
+    it('stays strict for non-nullable paths', () => {
+      expect(v('items.id', { items: null })).toBe(false);
+      expect(v('items.id', { items: [{}] })).toBe(false);
+      expect(v('opt.a', { opt: null })).toBe(false);
+      expect(v('opt.a', {})).toBe(true);
+    });
+
+    it('preserves nesting depth of arrays of arrays', () => {
+      expect(v('matrix.id', { matrix: [[{ id: 1 }]] })).toBe(true);
+      expect(v('matrix.id', { matrix: [{ id: 1 }] })).toBe(false);
+    });
+  });
+
+  describe('unions inside fields', () => {
+    const Base = z.object({ quality: z.string(), format: z.string() });
+    const UnionData = z.object({
+      name: z.string(),
+      outputs: z
+        .discriminatedUnion('status', [
+          Base.extend({ status: z.literal('prepared') }),
+          Base.extend({ status: z.literal('transcoded'), bandwidth: z.number() }),
+        ])
+        .array(),
+      media: z
+        .union([
+          z.object({ kind: z.literal('video'), duration: z.number() }),
+          z.object({ kind: z.literal('audio'), bitrate: z.number() }),
+        ])
+        .nullable(),
+    });
+    const s = select({
+      dataSchema: UnionData,
+      responseType: 'one',
+      selectable: [
+        'name',
+        'outputs.status',
+        'outputs.quality',
+        'outputs.bandwidth',
+        'media.kind',
+        'media.duration',
+        'media.bitrate',
+      ],
+      defaultSelect: '*',
+    });
+    const okU = (data: unknown): boolean => s.responseSchema.safeParse({ data }).success;
+    const vU = (sel: string, data: unknown): boolean =>
+      s.validatorSchema(s.queryParamsSchema().parse({ select: sel }).select).safeParse({ data })
+        .success;
+
+    it('partials each option of a union inside an array', () => {
+      expect(okU({ outputs: [{ quality: 'HD' }] })).toBe(true);
+      expect(okU({ outputs: [{ status: 'transcoded', bandwidth: 3 }] })).toBe(true);
+      expect(okU({ outputs: [{ quality: 1 }] })).toBe(false);
+    });
+
+    it('partials a nullable union and keeps it nullable', () => {
+      expect(okU({ media: { duration: 3 } })).toBe(true);
+      expect(okU({ media: null })).toBe(true);
+      expect(okU({ media: { kind: 'video', duration: 'x' } })).toBe(false);
+    });
+
+    it('validatorSchema accepts null for a nullable union path', () => {
+      expect(vU('media.kind', { media: null })).toBe(true);
+      expect(vU('media.kind', { media: { kind: 'video' } })).toBe(true);
+      expect(vU('media.kind', { media: {} })).toBe(false);
+    });
+  });
+
+  describe('metadata', () => {
+    it('keeps descriptions of rebuilt fields in the JSON schema', () => {
+      const Described = z.object({
+        products: z
+          .object({ id: z.number().meta({ description: 'Product ID' }), name: z.string() })
+          .array()
+          .meta({ description: 'Products' }),
+        owner: z.object({ id: z.number() }).nullable().meta({ description: 'Owner' }),
+      });
+      const d = select({
+        dataSchema: Described,
+        responseType: 'one',
+        selectable: ['products.id', 'products.name', 'owner.id'],
+        defaultSelect: '*',
+      });
+      const json = JSON.stringify(z.toJSONSchema(d.responseSchema));
+      expect(json).toContain('"Product ID"');
+      expect(json).toContain('"Products"');
+      expect(json).toContain('"Owner"');
+    });
+  });
+});
