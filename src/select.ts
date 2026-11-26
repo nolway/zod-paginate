@@ -384,32 +384,52 @@ function tryZodUnwrap(v: unknown): z.ZodType | undefined {
   return undefined;
 }
 
+/** Duck-typed: read `def.type` (e.g. "optional", "nullable", "array") from a Zod schema. */
+function getZodDefType(v: unknown): string | undefined {
+  if (!isPlainObject(v)) return undefined;
+  const def = getProp(v, 'def') ?? getProp(v, '_def');
+  if (!isPlainObject(def)) return undefined;
+  const type = getProp(def, 'type');
+  return typeof type === 'string' ? type : undefined;
+}
+
+/**
+ * One wrapper layer peeled off a field schema, outermost first.
+ * `other` covers any other unwrappable wrapper (default, readonly, lazy, catch...).
+ */
+interface WrapperLayer {
+  kind: 'array' | 'optional' | 'nullable' | 'other';
+  source: z.ZodType;
+}
+
 /**
  * Resolve a schema for path traversal: unwrap optional/nullable and array wrappers
  * to reach the inner ZodObject or ZodUnion that can be traversed further.
+ * `layers` lists the peeled wrappers (outermost first) so they can be rebuilt exactly.
  */
 function resolveSchemaForTraversal(schema: unknown): {
   inner: unknown;
-  isArray: boolean;
-  isOptional: boolean;
+  layers: WrapperLayer[];
 } {
   let current = schema;
-  let isArray = false;
-  let isOptional = false;
+  const layers: WrapperLayer[] = [];
 
   for (let i = 0; i < 10; i += 1) {
     if (isZodObjectSchema(current) || isZodUnionSchema(current)) break;
+    if (!isZodSchema(current)) break;
 
     const element = getZodArrayElement(current);
     if (element) {
-      isArray = true;
+      layers.push({ kind: 'array', source: current });
       current = element;
       continue;
     }
 
     const unwrapped = tryZodUnwrap(current);
     if (unwrapped) {
-      isOptional = true;
+      const defType = getZodDefType(current);
+      const kind = defType === 'optional' || defType === 'nullable' ? defType : 'other';
+      layers.push({ kind, source: current });
       current = unwrapped;
       continue;
     }
@@ -417,7 +437,46 @@ function resolveSchemaForTraversal(schema: unknown): {
     break;
   }
 
-  return { inner: current, isArray, isOptional };
+  return { inner: current, layers };
+}
+
+/** `.meta()` returns the schema's GlobalMeta; narrow it without a cast. */
+function isGlobalMeta(v: unknown): v is z.core.GlobalMeta {
+  return isPlainObject(v);
+}
+
+/**
+ * Copy the metadata (description, examples...) of `source` onto a rebuilt schema, so the
+ * generated JSON Schema / OpenAPI keeps it. `id` is dropped: the rebuilt schema is a
+ * different shape, and registering the same id twice throws.
+ */
+function copyMeta(target: z.ZodType, source: unknown): z.ZodType {
+  if (!isPlainObject(source)) return target;
+  const metaFn = getProp(source, 'meta');
+  if (typeof metaFn !== 'function') return target;
+  const meta: unknown = metaFn.call(source);
+  if (!isGlobalMeta(meta)) return target;
+  const copy = { ...meta };
+  delete copy.id;
+  if (Object.keys(copy).length === 0) return target;
+  return target.meta(copy);
+}
+
+/**
+ * Re-apply wrapper layers (outermost first) around a rebuilt inner schema.
+ * `other` wrappers are re-applied as `.optional()`.
+ */
+function rebuildWrappers(inner: z.ZodType, layers: readonly WrapperLayer[]): z.ZodType {
+  let built = inner;
+  for (let i = layers.length - 1; i >= 0; i -= 1) {
+    const layer = layers[i];
+    if (!layer) continue;
+    if (layer.kind === 'array') built = z.array(built);
+    else if (layer.kind === 'nullable') built = built.nullable();
+    else built = built.optional();
+    built = copyMeta(built, layer.source);
+  }
+  return built;
 }
 
 /**
@@ -614,20 +673,58 @@ function hasPathInObject(obj: z.ZodObject<z.ZodRawShape>, path: string): boolean
 }
 
 /**
- * Recursively apply `.optional()` to all properties of a ZodObject,
- * descending into nested ZodObject shapes.
+ * Recursively apply `.optional()` to all properties of a ZodObject, descending into
+ * nested objects, unions, arrays (of arrays) and optional/nullable wrappers.
+ * `stack` holds the objects being processed, to stop on recursive schemas.
  */
-function deepPartial(schema: z.ZodObject<z.ZodRawShape>): z.ZodObject<z.ZodRawShape> {
+function deepPartial(
+  schema: z.ZodObject<z.ZodRawShape>,
+  stack = new Set<unknown>(),
+): z.ZodObject<z.ZodRawShape> {
+  stack.add(schema);
   const shape: MutableShape = {};
   for (const [key, value] of Object.entries(schema.shape)) {
     if (!isZodSchema(value)) continue;
-    if (isZodObjectSchema(value)) {
-      shape[key] = deepPartial(value).optional();
-    } else {
-      shape[key] = value.optional();
-    }
+    shape[key] = deepPartialField(value, stack).optional();
   }
+  stack.delete(schema);
   return z.object(shape);
+}
+
+/**
+ * Deep-partial a field schema. Array / optional / nullable wrappers around an object or
+ * a union are peeled off, the inner schema is partialed, then the same wrappers are
+ * re-applied (a nullable stays nullable). Anything else is returned untouched.
+ */
+function deepPartialField(schema: z.ZodType, stack: Set<unknown>): z.ZodType {
+  const { inner, layers } = resolveSchemaForTraversal(schema);
+  // Only rebuild through wrappers we can restore faithfully.
+  if (layers.some((layer) => layer.kind === 'other')) return schema;
+  if (stack.has(inner)) return schema;
+
+  let partial: z.ZodType;
+  if (isZodObjectSchema(inner)) partial = deepPartial(inner, stack);
+  else if (isZodUnionSchema(inner)) partial = deepPartialUnion(inner, stack);
+  else return schema;
+
+  return rebuildWrappers(copyMeta(partial, inner), layers);
+}
+
+/** Deep-partial each option of a union, preserving nested unions (like `projectNestedUnion`). */
+function deepPartialUnion(
+  schema: { options: (z.ZodObject<z.ZodRawShape> | z.ZodType)[] } & z.ZodType,
+  stack: Set<unknown>,
+): z.ZodType {
+  const options = schema.options.map((option) => {
+    if (stack.has(option)) return option;
+    if (isZodObjectSchema(option)) return deepPartial(option, stack);
+    if (isZodUnionSchema(option)) return deepPartialUnion(option, stack);
+    return option;
+  });
+  const [first, second, ...rest] = options;
+  if (!first) return schema;
+  if (!second) return first;
+  return z.union([first, second, ...rest]);
 }
 
 /**
@@ -726,8 +823,10 @@ export function projectDataSchema(
   type UnionSchema = { options: (z.ZodObject<z.ZodRawShape> | z.ZodType)[] } & z.ZodType;
 
   const tree: Record<string, unknown> = {};
-  const arrayPaths = new Set<string>();
-  const optionalPaths = new Set<string>();
+  // Wrappers (array / optional / nullable) and the unwrapped inner schema of each
+  // intermediate path, to rebuild the projected node with the same shape and metadata.
+  const layersAtPath = new Map<string, WrapperLayer[]>();
+  const innerAtPath = new Map<string>();
   const unionAtPath = new Map<string, UnionSchema>();
 
   /**
@@ -782,8 +881,8 @@ export function projectDataSchema(
         if (rawField && isZodSchema(rawField)) {
           const partialPath = parts.slice(0, i + 1).join('.');
           const wrapInfo = resolveSchemaForTraversal(rawField);
-          if (wrapInfo.isArray) arrayPaths.add(partialPath);
-          if (wrapInfo.isOptional) optionalPaths.add(partialPath);
+          layersAtPath.set(partialPath, wrapInfo.layers);
+          innerAtPath.set(partialPath, wrapInfo.inner);
 
           // Track nested unions at intermediate paths so buildObjectFromTree
           // can preserve the union structure instead of merging into a single object.
@@ -844,9 +943,8 @@ export function projectDataSchema(
         } else {
           built = buildObjectFromTree(v, childPath);
         }
-        if (arrayPaths.has(childPath)) built = z.array(built);
-        if (optionalPaths.has(childPath)) built = built.optional();
-        shape[k] = built;
+        built = copyMeta(built, innerAtPath.get(childPath));
+        shape[k] = rebuildWrappers(built, layersAtPath.get(childPath) ?? []);
         continue;
       }
       throw new Error(`Invalid projection tree at "${k}"`);

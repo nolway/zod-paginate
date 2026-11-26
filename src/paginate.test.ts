@@ -2498,3 +2498,64 @@ describe('boolean filters', () => {
     expect(result.success).toBe(true);
   });
 });
+
+describe('responseSchema deep partial and nullable projection', () => {
+  const Item = z.object({ id: z.number(), label: z.string() });
+  const Data = z.object({
+    name: z.string(),
+    nul: z.object({ a: z.string(), b: z.string() }).nullable(),
+    items: Item.array(),
+    nulItems: Item.array().nullable(),
+    matrix: Item.array().array(),
+  });
+  const pagination = { itemsPerPage: 20, totalItems: 1, currentPage: 1, totalPages: 1 };
+
+  function setup(): PaginateResult<typeof Data> {
+    return paginate({
+      paginationType: 'LIMIT_OFFSET',
+      dataSchema: Data,
+      selectable: [
+        'name',
+        'nul.a',
+        'nul.b',
+        'items.id',
+        'items.label',
+        'nulItems.id',
+        'nulItems.label',
+        'matrix.id',
+        'matrix.label',
+      ],
+      defaultSelect: ['name'],
+      defaultLimit: 20,
+      maxLimit: 100,
+    });
+  }
+
+  it('responseSchema accepts partial array elements and nullable wrappers', () => {
+    const { responseSchema } = setup();
+    const ok = (item: unknown): boolean =>
+      responseSchema.safeParse({ data: [item], pagination }).success;
+
+    expect(ok({ items: [{ id: 1 }] })).toBe(true);
+    expect(ok({ nul: { a: 'x' } })).toBe(true);
+    expect(ok({ nul: null })).toBe(true);
+    expect(ok({ nulItems: null })).toBe(true);
+    expect(ok({ matrix: [[{ id: 1 }]] })).toBe(true);
+    expect(ok({ items: [{ id: 'x' }] })).toBe(false);
+  });
+
+  it('validatorSchema keeps nullability of nested paths and stays strict otherwise', () => {
+    const { queryParamsSchema, validatorSchema } = setup();
+    const v = (select: string, item: unknown): boolean =>
+      validatorSchema(queryParamsSchema().parse({ select }).pagination).safeParse({
+        data: [item],
+        pagination,
+      }).success;
+
+    expect(v('nul.a', { nul: null })).toBe(true);
+    expect(v('nulItems.id', { nulItems: null })).toBe(true);
+    expect(v('items.id', { items: [{ id: 1 }] })).toBe(true);
+    expect(v('items.id', { items: null })).toBe(false);
+    expect(v('items.id', { items: [{}] })).toBe(false);
+  });
+});

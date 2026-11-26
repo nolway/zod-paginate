@@ -1551,6 +1551,58 @@ describe('Integration: zod-openapi', () => {
     });
   });
 
+  describe('responseSchema deep partial with zod-openapi', () => {
+    const Data = z.object({
+      products: z
+        .object({
+          id: z.number().meta({ description: 'Product ID' }),
+          groupKey: z.string(),
+        })
+        .array()
+        .meta({ description: 'Products available' }),
+      owner: z
+        .object({ id: z.number(), name: z.string() })
+        .nullable()
+        .meta({ description: 'Owner' }),
+    });
+
+    function itemProperties(): Record<string, unknown> {
+      const { responseSchema } = select({
+        dataSchema: Data,
+        selectable: ['products.id', 'products.groupKey', 'owner.id', 'owner.name'],
+        defaultSelect: '*',
+        responseType: 'one',
+      });
+      const { schema } = createSchema(responseSchema);
+      const json: unknown = JSON.parse(JSON.stringify(schema));
+      const root = isPlainObject(json) ? getOwnProp(json, 'properties') : undefined;
+      const data = isPlainObject(root) ? getOwnProp(root, 'data') : undefined;
+      expect(data).toMatchObject({ type: 'object' });
+      const properties = isPlainObject(data) ? getOwnProp(data, 'properties') : undefined;
+      if (!isPlainObject(properties)) throw new Error('data has no properties');
+      return properties;
+    }
+
+    it('documents array elements as partial and keeps descriptions', () => {
+      const products = getOwnProp(itemProperties(), 'products');
+      expect(products).toMatchObject({
+        type: 'array',
+        description: 'Products available',
+        items: { type: 'object', properties: { id: { description: 'Product ID' } } },
+      });
+      expect(products).not.toHaveProperty('items.required');
+    });
+
+    it('documents nullable objects as nullable', () => {
+      const owner = getOwnProp(itemProperties(), 'owner');
+      expect(owner).toMatchObject({
+        description: 'Owner',
+        anyOf: [{ type: 'object' }, { type: 'null' }],
+      });
+      expect(owner).not.toHaveProperty('anyOf.0.required');
+    });
+  });
+
   describe('discriminated union schemas with zod-openapi', () => {
     it('responseSchema with discriminated union generates a valid OpenAPI response', () => {
       const VideoSchema = z.object({
